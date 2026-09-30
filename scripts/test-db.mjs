@@ -31,7 +31,8 @@ await db.exec(`grant usage on schema extensions to anon, authenticated, service_
                grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
                grant usage, select on all sequences in schema public to anon, authenticated, service_role;`);
 await db.exec(readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8"));
-console.log("✓ seed");
+await db.exec(readFileSync(new URL("../supabase/demo.sql", import.meta.url), "utf8"));
+console.log("✓ seed + demo");
 
 const one = async (sql, params) => (await db.query(sql, params)).rows[0];
 const all = async (sql, params) => (await db.query(sql, params)).rows;

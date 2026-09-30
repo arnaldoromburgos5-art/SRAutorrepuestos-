@@ -42,8 +42,8 @@ Requisitos: Node.js 20.9 o superior y una cuenta gratuita en [Supabase](https://
    npm install
    ```
 2. **Crear el proyecto en Supabase** (región sugerida: *South America – São Paulo*).
-3. **Crear la base de datos.** En Supabase abrí *SQL Editor → New query*, pegá el contenido de `supabase/setup-completo.sql` y presioná *Run*. Ese archivo incluye las migraciones y los datos de demostración.
-   - Si usás la Supabase CLI, podés aplicar `supabase/migrations/*` y luego `supabase/seed.sql`.
+3. **Crear la base de datos.** En Supabase abrí *SQL Editor → New query*, pegá el contenido de `supabase/setup-completo.sql` y presioná *Run*. Ese archivo incluye las migraciones y los datos base (categorías, marcas, vehículos, zonas de envío y páginas), sin productos. Si querés una tienda de ejemplo, ejecutá además `supabase/demo.sql`.
+   - Si usás la Supabase CLI, podés aplicar `supabase/migrations/*`, luego `supabase/seed.sql` y, opcionalmente, `supabase/demo.sql`.
 4. **Variables de entorno.** Copiá `.env.example` como `.env.local` y completá:
    - `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` (en *Project Settings → API*).
    - `SUPABASE_SERVICE_ROLE_KEY` (sólo servidor; nunca la expongas).
@@ -131,7 +131,8 @@ Estructura principal:
 
 ```
 supabase/migrations/   esquema, funciones y políticas RLS
-supabase/seed.sql      datos de demostración (ilustrativos)
+supabase/seed.sql      datos base (configuración, categorías, marcas, vehículos, envíos)
+supabase/demo.sql      productos y ventas de demostración (opcional, ilustrativos)
 src/app/(store)/       tienda
 src/app/admin/         panel administrativo
 src/app/api/           checkout, pagos, chat, asistente, exportación, eventos, cron
@@ -146,7 +147,7 @@ Los asistentes eligen el proveedor con `AI_PROVIDER`: `nvidia` (API gratuita de 
 
 ## 7. Pendiente antes del lanzamiento
 
-- [ ] Reemplazar los datos de demostración (precios, códigos OEM y compatibilidades son ilustrativos) y las imágenes por fotos reales.
+- [ ] Cargar el catálogo real con fotos (si se usó `demo.sql`, borrar antes sus productos de ejemplo).
 - [ ] Definir el origen de los datos de compatibilidad: catálogo del proveedor o base técnica.
 - [ ] Completar razón social, RUC, teléfono y dirección en *Configuración*.
 - [ ] Certificar Bancard y probar pagos aprobados, rechazados y duplicados en staging.

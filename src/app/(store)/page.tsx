@@ -105,15 +105,17 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mx-auto max-w-7xl px-4 pb-12">
-        <div className="mb-6 flex items-end justify-between gap-4">
-          <h2 className="font-display text-3xl font-bold uppercase">{vehicle ? "Populares para tu vehículo" : "Los más vendidos"}</h2>
-          <Link href="/catalogo" className="inline-flex items-center gap-1 text-sm font-semibold text-accent-600 hover:text-accent-700">
-            Ver catálogo <ArrowRight className="size-4" />
-          </Link>
-        </div>
-        <ProductGrid items={popular.items} />
-      </section>
+      {popular.items.length ? (
+        <section className="mx-auto max-w-7xl px-4 pb-12">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <h2 className="font-display text-3xl font-bold uppercase">{vehicle ? "Populares para tu vehículo" : "Los más vendidos"}</h2>
+            <Link href="/catalogo" className="inline-flex items-center gap-1 text-sm font-semibold text-accent-600 hover:text-accent-700">
+              Ver catálogo <ArrowRight className="size-4" />
+            </Link>
+          </div>
+          <ProductGrid items={popular.items} />
+        </section>
+      ) : null}
 
       <section className="mx-auto max-w-7xl px-4 pb-4">
         <h2 className="mb-6 font-display text-3xl font-bold uppercase">Marcas</h2>
