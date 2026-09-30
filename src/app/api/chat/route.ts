@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getVehicleSelection } from "@/lib/catalog";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/admin";
-import { describeAiError, effort, isAiConfigured, runToolLoop, type MessageParam } from "@/lib/ai/client";
+import { describeAiError, effort, historyMatchesProvider, isAiConfigured, runAssistant, type StoredMessage } from "@/lib/ai/client";
 import { SHOPPER_SYSTEM, shopperTools, type ShopperCtx } from "@/lib/ai/shopper";
 
 export const maxDuration = 60;
@@ -33,14 +33,23 @@ export async function POST(request: Request) {
   const [{ supabase, user }, vehicle] = await Promise.all([getSession(), getVehicleSelection()]);
   const db = createServiceClient();
 
-  // Conversación: se reutiliza sólo si pertenece a esta sesión/usuario.
+  // Conversación: se reutiliza sólo si pertenece a esta sesión/usuario y al proveedor de IA actual.
   let conversationId = parsed.data.conversationId ?? null;
+  let history: StoredMessage[] = [];
   if (conversationId) {
     const { data: conv } = await db.from("ai_conversations").select("id, session_id, user_id, kind, message_count").eq("id", conversationId).maybeSingle();
     const owns = conv && conv.kind === "shopper" && (conv.session_id === sessionId || (user && conv.user_id === user.id));
     if (!owns) conversationId = null;
     else if (conv.message_count >= MAX_MESSAGES) {
       return NextResponse.json({ error: "La conversación es muy larga. Empezá una nueva desde el menú del chat.", reset: true }, { status: 409 });
+    }
+  }
+  if (conversationId) {
+    const { data: rows } = await db.from("ai_messages").select("role, content").eq("conversation_id", conversationId).order("id");
+    history = (rows ?? []) as StoredMessage[];
+    if (!historyMatchesProvider(history)) {
+      conversationId = null;
+      history = [];
     }
   }
   if (!conversationId) {
@@ -53,32 +62,27 @@ export async function POST(request: Request) {
     conversationId = created.id as string;
   }
 
-  const { data: rows } = await db.from("ai_messages").select("role, content").eq("conversation_id", conversationId).order("id");
-  const history: MessageParam[] = (rows ?? []).map((r) => ({ role: r.role as MessageParam["role"], content: r.content }));
-
-  // Contexto del servidor como mensaje de sistema (autoridad del operador, no del usuario).
+  // Contexto del servidor (autoridad del operador, no del usuario).
   const context = [
     `Fecha: ${new Date().toLocaleDateString("es-PY", { timeZone: "America/Asuncion" })}.`,
     vehicle ? `Vehículo seleccionado en la tienda: ${vehicle.label} (version_id ${vehicle.versionId}).` : "La persona no seleccionó vehículo.",
     user ? "La persona inició sesión: podés consultar sus pedidos." : "La persona no inició sesión.",
   ].join(" ");
-  const turn: MessageParam[] = [
-    { role: "user", content: message },
-    { role: "system", content: context },
-  ];
 
   const ctx: ShopperCtx = { db: supabase, userId: user?.id ?? null, vehicle, conversationId, cards: [], cartActions: [], handoff: false };
 
   try {
-    const result = await runToolLoop({
+    const result = await runAssistant({
       system: SHOPPER_SYSTEM,
-      history: [...history, ...turn],
+      context,
+      history,
+      userText: message,
       tools: shopperTools,
       ctx,
       effort: effort(process.env.SHOPPER_AI_EFFORT, "low"),
       maxIterations: 8,
     });
-    const toStore = [...turn, ...result.appended];
+    const toStore = result.toStore;
     await db.from("ai_messages").insert(toStore.map((m) => ({ conversation_id: conversationId, role: m.role, content: m.content })));
     await db
       .from("ai_conversations")

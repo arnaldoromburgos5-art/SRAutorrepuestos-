@@ -1,8 +1,8 @@
 # SR Autorrepuestos
 
-Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (Claude): uno comercial para compradores y otro interno para administradores.
+Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (Google Gemini o Anthropic Claude): uno comercial para compradores y otro interno para administradores.
 
-- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · Claude API · Vercel.
+- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · Gemini API (o Claude API) · Vercel.
 - **Moneda:** guaraníes (PYG, IVA incluido). Reales y dólares se muestran como referencia.
 - **Pagos:** tarjetas mediante Bancard vPOS, con un simulador para desarrollo.
 - **Entregas:** retiro en el local, envío a domicilio (Asunción y Central) y envío por agencia al interior.
@@ -47,7 +47,7 @@ Requisitos: Node.js 20.9 o superior y una cuenta gratuita en [Supabase](https://
 4. **Variables de entorno.** Copiá `.env.example` como `.env.local` y completá:
    - `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` (en *Project Settings → API*).
    - `SUPABASE_SERVICE_ROLE_KEY` (sólo servidor; nunca la expongas).
-   - `ANTHROPIC_API_KEY` para los asistentes (en [console.anthropic.com](https://console.anthropic.com)).
+   - `GEMINI_API_KEY` para los asistentes: es gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey). También podés usar Claude con `AI_PROVIDER=anthropic` y `ANTHROPIC_API_KEY`.
    - `PAYMENT_PROVIDER=mock` para probar compras sin cobro real.
 5. **Iniciar**
    ```bash
@@ -140,7 +140,7 @@ src/lib/ai/            asistentes (herramientas, bucle con Claude, ejecución de
 src/lib/payments/      Bancard y simulador
 ```
 
-Los asistentes usan `claude-opus-5-5` por defecto, con fallback del lado del servidor ante rechazos. Podés cambiar el modelo con `ANTHROPIC_MODEL` y el nivel de esfuerzo con `SHOPPER_AI_EFFORT` y `ADMIN_AI_EFFORT`.
+Los asistentes usan Google Gemini (`gemini-3.7-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
 
 ---
 
