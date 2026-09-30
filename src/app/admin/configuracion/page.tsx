@@ -7,9 +7,11 @@ import { friendlyDbError, type ActionResult } from "@/lib/utils";
 import { PY_DEPARTMENTS } from "@/lib/types";
 import { deleteRecordAction, toggleRecordAction } from "../actions";
 import { ActionButton, ActionForm } from "@/components/admin/action-form";
+import { AiSettingsForm } from "@/components/admin/ai-settings";
+import { AI_PROVIDERS, aiStatus } from "@/lib/ai/config";
 import { Badge, Card, Field, PageHeader, Table, inputCls } from "@/components/admin/ui";
 
-export const metadata = { title: "Configuración" };
+export const metadata = { title: "Datos del negocio" };
 
 async function saveSetting(key: string, value: Record<string, unknown>) {
   const ctx = await staffContext();
@@ -86,6 +88,7 @@ export default async function SettingsPage() {
     supabase.from("settings").select("key, value"),
     supabase.from("shipping_zones").select("*").order("sort"),
   ]);
+  const ai = await aiStatus();
   const s = Object.fromEntries((settings ?? []).map((x) => [x.key, x.value])) as Record<string, Record<string, string & { USD: number; BRL: number }>>;
   const store = s.store ?? {};
   const cur = s.currency ?? {};
@@ -93,7 +96,10 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Configuración" description="Datos del negocio, monedas, envíos y políticas que usan la tienda y el chatbot." />
+      <PageHeader title="Datos del negocio" description="Asistente de IA, datos de contacto, monedas, envíos y políticas que usan la tienda y el chatbot." />
+      <Card title="Asistente de IA (clave de API)">
+        <AiSettingsForm providers={AI_PROVIDERS} status={ai} />
+      </Card>
       <div className="grid gap-6 xl:grid-cols-2">
         <Card title="Negocio">
           <ActionForm action={saveStore}>

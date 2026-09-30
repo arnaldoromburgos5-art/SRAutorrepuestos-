@@ -4,64 +4,88 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Bot, Boxes, Car, ClipboardList, FileSpreadsheet, Gauge, Megaphone, Menu, Package, Settings, ShieldCheck,
-  Tag, Truck, Users, UserCog, X, type LucideIcon,
+  BarChart3, Bot, Boxes, Car, ClipboardList, FileSpreadsheet, Home, Megaphone, Menu, Package, Settings,
+  ShieldCheck, Store, Tag, Truck, UserCog, Users, X, type LucideIcon,
 } from "lucide-react";
 import { can, ROLE_LABELS, type Permission, type Role } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/store/ui";
 
-const NAV: { href: string; label: string; icon: LucideIcon; perm?: Permission; group: string }[] = [
-  { href: "/admin", label: "Resumen", icon: Gauge, group: "General" },
-  { href: "/admin/asistente", label: "Asistente IA", icon: Bot, perm: "ai.admin", group: "General" },
-  { href: "/admin/pedidos", label: "Pedidos", icon: ClipboardList, perm: "orders.read", group: "Ventas" },
-  { href: "/admin/clientes", label: "Clientes", icon: Users, perm: "customers.read", group: "Ventas" },
-  { href: "/admin/promociones", label: "Promociones", icon: Tag, perm: "promotions.manage", group: "Ventas" },
-  { href: "/admin/productos", label: "Productos", icon: Package, perm: "products.read", group: "Catálogo" },
-  { href: "/admin/importar", label: "Importar / exportar", icon: FileSpreadsheet, perm: "products.write", group: "Catálogo" },
-  { href: "/admin/inventario", label: "Inventario", icon: Boxes, perm: "inventory.read", group: "Catálogo" },
-  { href: "/admin/proveedores", label: "Proveedores", icon: Truck, perm: "suppliers.manage", group: "Catálogo" },
-  { href: "/admin/vehiculos", label: "Vehículos", icon: Car, perm: "vehicles.manage", group: "Catálogo" },
-  { href: "/admin/contenido", label: "Contenido", icon: Megaphone, perm: "content.manage", group: "Tienda" },
-  { href: "/admin/reportes", label: "Reportes", icon: BarChart3, perm: "analytics.read", group: "Tienda" },
-  { href: "/admin/configuracion", label: "Configuración", icon: Settings, perm: "settings.manage", group: "Sistema" },
-  { href: "/admin/usuarios", label: "Usuarios y roles", icon: UserCog, perm: "users.manage", group: "Sistema" },
-  { href: "/admin/auditoria", label: "Auditoría", icon: ShieldCheck, perm: "audit.read", group: "Sistema" },
+type Item = { href: string; label: string; icon: LucideIcon; perm?: Permission };
+
+// Todas las secciones, siempre visibles, agrupadas por tarea y con nombres simples.
+const GROUPS: { title: string; items: Item[] }[] = [
+  {
+    title: "Día a día",
+    items: [
+      { href: "/admin", label: "Inicio", icon: Home },
+      { href: "/admin/pedidos", label: "Pedidos", icon: ClipboardList, perm: "orders.read" },
+      { href: "/admin/asistente", label: "Asistente IA", icon: Bot, perm: "ai.admin" },
+    ],
+  },
+  {
+    title: "Mis productos",
+    items: [
+      { href: "/admin/productos", label: "Productos", icon: Package, perm: "products.read" },
+      { href: "/admin/inventario", label: "Stock", icon: Boxes, perm: "inventory.read" },
+      { href: "/admin/importar", label: "Carga desde Excel", icon: FileSpreadsheet, perm: "products.write" },
+      { href: "/admin/proveedores", label: "Proveedores", icon: Truck, perm: "suppliers.manage" },
+      { href: "/admin/vehiculos", label: "Vehículos", icon: Car, perm: "vehicles.manage" },
+    ],
+  },
+  {
+    title: "Ventas",
+    items: [
+      { href: "/admin/clientes", label: "Clientes", icon: Users, perm: "customers.read" },
+      { href: "/admin/promociones", label: "Ofertas y cupones", icon: Tag, perm: "promotions.manage" },
+      { href: "/admin/reportes", label: "Reportes", icon: BarChart3, perm: "analytics.read" },
+    ],
+  },
+  {
+    title: "Mi tienda",
+    items: [
+      { href: "/admin/contenido", label: "Portada y páginas", icon: Megaphone, perm: "content.manage" },
+      { href: "/admin/configuracion", label: "Datos del negocio", icon: Settings, perm: "settings.manage" },
+      { href: "/admin/usuarios", label: "Usuarios", icon: UserCog, perm: "users.manage" },
+      { href: "/admin/auditoria", label: "Historial de cambios", icon: ShieldCheck, perm: "audit.read" },
+    ],
+  },
 ];
+
+function NavLink({ item, active, onNavigate, big }: { item: Item; active: boolean; onNavigate?: () => void; big?: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-3 transition-colors",
+        big ? "py-2.5 text-[15px]" : "py-2 text-sm",
+        active ? "bg-accent-500 font-semibold text-white" : "text-ink-300 hover:bg-ink-800 hover:text-white",
+      )}
+    >
+      <item.icon className={big ? "size-5" : "size-4"} />
+      {item.label}
+    </Link>
+  );
+}
 
 function Links({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const items = NAV.filter((n) => !n.perm || can(role, n.perm));
-  const groups = [...new Set(items.map((i) => i.group))];
+  const isActive = (href: string) => (href === "/admin" ? pathname === "/admin" : pathname.startsWith(href));
   return (
-    <nav className="space-y-5">
-      {groups.map((g) => (
-        <div key={g}>
-          <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{g}</p>
-          <ul className="space-y-0.5">
-            {items
-              .filter((i) => i.group === g)
-              .map((i) => {
-                const active = i.href === "/admin" ? pathname === "/admin" : pathname.startsWith(i.href);
-                return (
-                  <li key={i.href}>
-                    <Link
-                      href={i.href}
-                      onClick={onNavigate}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                        active ? "bg-accent-500 font-semibold text-white" : "text-ink-300 hover:bg-ink-800 hover:text-white",
-                      )}
-                    >
-                      <i.icon className="size-4" />
-                      {i.label}
-                    </Link>
-                  </li>
-                );
-              })}
-          </ul>
-        </div>
-      ))}
+    <nav className="space-y-4">
+      {GROUPS.map((g) => {
+        const items = g.items.filter((n) => !n.perm || can(role, n.perm));
+        if (!items.length) return null;
+        return (
+          <div key={g.title}>
+            <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{g.title}</p>
+            <div className="space-y-0.5">
+              {items.map((i) => <NavLink key={i.href} item={i} active={isActive(i.href)} onNavigate={onNavigate} big />)}
+            </div>
+          </div>
+        );
+      })}
     </nav>
   );
 }
@@ -72,18 +96,18 @@ export function AdminSidebar({ role, name }: { role: Role; name: string }) {
     <div className="border-t border-ink-800 p-4 text-xs text-ink-400">
       <p className="truncate font-semibold text-ink-200">{name}</p>
       <p>{ROLE_LABELS[role]}</p>
-      <Link href="/" className="mt-2 inline-block text-accent-400 hover:text-accent-100">
-        Ver tienda →
+      <Link href="/" className="mt-3 flex items-center gap-2 rounded-lg bg-ink-800 px-3 py-2 font-semibold text-white hover:bg-ink-700">
+        <Store className="size-4" /> Ver mi tienda
       </Link>
     </div>
   );
   return (
     <>
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col bg-ink-900 lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col bg-ink-900 lg:flex">
         <Link href="/admin" className="px-4 py-5">
           <Logo light />
         </Link>
-        <div className="flex-1 overflow-y-auto px-2 pb-4">
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
           <Links role={role} />
         </div>
         {footer}
@@ -104,7 +128,7 @@ export function AdminSidebar({ role, name }: { role: Role; name: string }) {
                 <X className="size-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-4">
+            <div className="flex-1 overflow-y-auto px-3 pb-4">
               <Links role={role} onNavigate={() => setOpen(false)} />
             </div>
             {footer}

@@ -4,7 +4,8 @@ import { getSession } from "@/lib/auth";
 import { getVehicleSelection } from "@/lib/catalog";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/admin";
-import { describeAiError, effort, historyMatchesProvider, isAiConfigured, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { describeAiError, effort, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { getAiConfig } from "@/lib/ai/config";
 import { SHOPPER_SYSTEM, shopperTools, type ShopperCtx } from "@/lib/ai/shopper";
 
 export const maxDuration = 60;
@@ -18,7 +19,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!isAiConfigured()) {
+  const ai = await getAiConfig();
+  if (!ai) {
     return NextResponse.json({ error: "El asistente todavía no está configurado." }, { status: 503 });
   }
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
   if (conversationId) {
     const { data: rows } = await db.from("ai_messages").select("role, content").eq("conversation_id", conversationId).order("id");
     history = (rows ?? []) as StoredMessage[];
-    if (!historyMatchesProvider(history)) {
+    if (!historyMatchesProvider(history, ai.provider)) {
       conversationId = null;
       history = [];
     }
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAssistant({
+      ai,
       system: SHOPPER_SYSTEM,
       context,
       history,

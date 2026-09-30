@@ -4,12 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Copy, Eye, ImagePlus, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Copy, Eye, ImagePlus, Loader2, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPyg } from "@/lib/money";
 import { slugify } from "@/lib/utils";
 import { deleteProductAction, duplicateProductAction, saveProductAction } from "@/app/admin/actions";
-import { Card, Field, btnDark, btnGhost, btnPrimary, inputCls } from "./ui";
+import { Card, Field, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type Ref = { kind: "oem" | "alternative" | "manufacturer"; code: string; brand?: string | null };
 type Fit = { version_id: string; status: "confirmed" | "unverified" | "incompatible"; notes?: string | null; label: string };
@@ -79,9 +79,11 @@ export function ProductForm({
   function submit(status: ProductFormData["status"]) {
     setResult(null);
     start(async () => {
+      // Si no se cargó un código interno, se genera uno único (p. ej. SR-K3F9QZ).
+      const sku = f.sku.trim() || `SR-${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 4).toUpperCase()}`;
       const payload = {
         id: f.id,
-        sku: f.sku,
+        sku,
         name: f.name,
         slug: f.slug || undefined,
         short_description: f.short_description || null,
@@ -111,7 +113,7 @@ export function ProductForm({
       const res = await saveProductAction(payload);
       if (!res.ok) return setResult({ ok: false, text: res.error });
       setResult({ ok: true, text: status === "published" ? "Producto guardado y publicado." : "Producto guardado." });
-      setF((x) => ({ ...x, status, slug: res.data?.slug }));
+      setF((x) => ({ ...x, status, sku, slug: res.data?.slug }));
       if (!f.id && res.data) router.replace(`/admin/productos/${res.data.id}`);
       else router.refresh();
     });
@@ -149,16 +151,36 @@ export function ProductForm({
       return { ...x, images };
     });
 
+  const statusLabel = f.status === "published" ? "Visible en la tienda" : f.status === "archived" ? "Archivado (oculto)" : "Borrador (no visible)";
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+    <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
       <div className="space-y-6">
-        <Card title="Datos principales">
+        <Card title="1. Fotos">
+          <div className="flex flex-wrap gap-3">
+            {f.images.map((img, i) => (
+              <div key={img.url + i} className="group relative size-28 overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+                <Image src={img.url} alt="" fill sizes="112px" className="object-cover" />
+                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-ink-950/70 p-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button onClick={() => move(i, -1)} className="text-white" aria-label="Mover antes"><ArrowUp className="size-4 -rotate-90" /></button>
+                  <button onClick={() => set("images", f.images.filter((_, j) => j !== i))} className="text-white" aria-label="Quitar"><Trash2 className="size-4" /></button>
+                  <button onClick={() => move(i, 1)} className="text-white" aria-label="Mover después"><ArrowDown className="size-4 -rotate-90" /></button>
+                </div>
+                {i === 0 ? <span className="absolute left-1 top-1 rounded bg-accent-500 px-1.5 text-[10px] font-bold text-white">PRINCIPAL</span> : null}
+              </div>
+            ))}
+            <label className="grid size-28 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-50 text-center text-xs font-semibold text-accent-700 hover:border-accent-500">
+              {uploading ? <Loader2 className="size-5 animate-spin" /> : <span><ImagePlus className="mx-auto mb-1 size-6" />Agregar foto</span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="sr-only" onChange={(e) => upload(e.target.files)} />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-ink-400">Podés subir varias. La primera es la principal; pasá el mouse sobre una foto para moverla o quitarla.</p>
+        </Card>
+
+        <Card title="2. ¿Qué producto es?">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nombre *" className="sm:col-span-2">
+            <Field label="Nombre del producto *" className="sm:col-span-2" hint="Ej.: Pastillas de freno delanteras cerámicas">
               <input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} />
-            </Field>
-            <Field label="SKU *" hint="Código interno único">
-              <input value={f.sku} onChange={(e) => set("sku", e.target.value.toUpperCase())} className={inputCls} />
             </Field>
             <Field label="Marca">
               <select value={f.brand_id} onChange={(e) => set("brand_id", e.target.value)} className={inputCls}>
@@ -177,107 +199,34 @@ export function ProductForm({
                 ))}
               </select>
             </Field>
-            <Field label="Garantía (meses)">
-              <input value={f.warranty_months} onChange={(e) => set("warranty_months", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-            <Field label="Descripción corta" className="sm:col-span-2">
+            <Field label="Descripción breve" className="sm:col-span-2" hint="Una línea que se ve debajo del nombre.">
               <input value={f.short_description} onChange={(e) => set("short_description", e.target.value)} maxLength={300} className={inputCls} />
             </Field>
-            <Field label="Descripción" className="sm:col-span-2">
-              <textarea value={f.description} onChange={(e) => set("description", e.target.value)} rows={5} className="w-full rounded-lg border border-ink-200 p-3 text-sm" />
-            </Field>
-            <Field label="Texto de garantía (opcional)" className="sm:col-span-2">
-              <input value={f.warranty_text} onChange={(e) => set("warranty_text", e.target.value)} className={inputCls} />
-            </Field>
           </div>
         </Card>
 
-        <Card title="Precios">
+        <Card title="3. Precio y stock">
           {!canPrice ? <p className="mb-3 text-sm text-warn-600">No tenés permiso para modificar precios.</p> : null}
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Precio de venta (Gs., IVA incl.) *">
-              <input disabled={!canPrice} value={f.price} onChange={(e) => set("price", e.target.value)} inputMode="numeric" className={inputCls} />
+            <Field label="Precio de venta (Gs.) *" hint={price ? `Se verá como ${formatPyg(price)} (IVA incluido)` : "Con IVA incluido, sin puntos"}>
+              <input disabled={!canPrice} value={f.price} onChange={(e) => set("price", e.target.value)} inputMode="numeric" placeholder="395000" className={inputCls} />
             </Field>
-            <Field label="Precio anterior (tachado)">
-              <input disabled={!canPrice} value={f.compare_at_price} onChange={(e) => set("compare_at_price", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-            <Field label="Precio mayorista">
-              <input disabled={!canPrice} value={f.wholesale_price} onChange={(e) => set("wholesale_price", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-            <Field label="Costo (sin IVA)" hint={margin !== null ? `Margen estimado: ${margin} %` : "Para calcular márgenes"}>
-              <input disabled={!canPrice} value={f.cost} onChange={(e) => set("cost", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-            <Field label="IVA">
-              <select value={f.tax_rate} onChange={(e) => set("tax_rate", Number(e.target.value) as 0 | 5 | 10)} className={inputCls}>
-                <option value={10}>10 %</option>
-                <option value={5}>5 %</option>
-                <option value={0}>Exento</option>
-              </select>
-            </Field>
-            <Field label="Peso (gramos)">
-              <input value={f.weight_grams} onChange={(e) => set("weight_grams", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-          </div>
-          {price ? <p className="mt-3 text-sm text-ink-500">Se mostrará como {formatPyg(price)}.</p> : null}
-        </Card>
-
-        <Card title="Imágenes">
-          <div className="flex flex-wrap gap-3">
-            {f.images.map((img, i) => (
-              <div key={img.url + i} className="group relative size-28 overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
-                <Image src={img.url} alt="" fill sizes="112px" className="object-cover" />
-                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-ink-950/70 p-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button onClick={() => move(i, -1)} className="text-white" aria-label="Mover antes"><ArrowUp className="size-4 -rotate-90" /></button>
-                  <button onClick={() => set("images", f.images.filter((_, j) => j !== i))} className="text-white" aria-label="Quitar"><Trash2 className="size-4" /></button>
-                  <button onClick={() => move(i, 1)} className="text-white" aria-label="Mover después"><ArrowDown className="size-4 -rotate-90" /></button>
-                </div>
-                {i === 0 ? <span className="absolute left-1 top-1 rounded bg-accent-500 px-1.5 text-[10px] font-bold text-white">PRINCIPAL</span> : null}
+            {f.id ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-ink-600">Stock actual</span>
+                <p className="flex h-10 items-center gap-2 text-sm">
+                  <strong className="text-lg">{onHand ?? 0}</strong> unidades ·{" "}
+                  <Link href={`/admin/inventario?producto=${f.id}`} className="font-semibold text-accent-600">Cambiar stock</Link>
+                </p>
               </div>
-            ))}
-            <label className="grid size-28 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-ink-200 text-center text-xs text-ink-500 hover:border-accent-500">
-              {uploading ? <Loader2 className="size-5 animate-spin" /> : <span><ImagePlus className="mx-auto mb-1 size-5" />Subir</span>}
-              <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="sr-only" onChange={(e) => upload(e.target.files)} />
-            </label>
-          </div>
-          <p className="mt-2 text-xs text-ink-400">JPG, PNG, WebP o AVIF de hasta 5 MB. La primera imagen es la principal.</p>
-        </Card>
-
-        <Card title="Códigos y referencias">
-          <div className="space-y-2">
-            {f.references.map((r, i) => (
-              <div key={i} className="flex flex-wrap gap-2">
-                <select
-                  value={r.kind}
-                  onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, kind: e.target.value as Ref["kind"] } : x)))}
-                  className={`${inputCls} w-44`}
-                >
-                  <option value="oem">OEM (original)</option>
-                  <option value="manufacturer">Código fabricante</option>
-                  <option value="alternative">Alternativa</option>
-                </select>
-                <input value={r.code} placeholder="Código" onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)))} className={`${inputCls} w-48`} />
-                <input value={r.brand ?? ""} placeholder="Marca (opcional)" onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, brand: e.target.value } : x)))} className={`${inputCls} w-40`} />
-                <button onClick={() => set("references", f.references.filter((_, j) => j !== i))} className="text-ink-400 hover:text-bad-600" aria-label="Quitar"><X className="size-4" /></button>
-              </div>
-            ))}
-            <button onClick={() => set("references", [...f.references, { kind: "oem", code: "" }])} className={btnGhost}>
-              <Plus className="size-4" /> Agregar código
-            </button>
-          </div>
-        </Card>
-
-        <Card title="Características técnicas">
-          <div className="space-y-2">
-            {f.specs.map((s, i) => (
-              <div key={i} className="flex gap-2">
-                <input value={s.key} placeholder="Característica (p. ej. Posición)" onChange={(e) => set("specs", f.specs.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} className={inputCls} />
-                <input value={s.value} placeholder="Valor (p. ej. Delantera)" onChange={(e) => set("specs", f.specs.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} className={inputCls} />
-                <button onClick={() => set("specs", f.specs.filter((_, j) => j !== i))} className="text-ink-400 hover:text-bad-600" aria-label="Quitar"><X className="size-4" /></button>
-              </div>
-            ))}
-            <button onClick={() => set("specs", [...f.specs, { key: "", value: "" }])} className={btnGhost}>
-              <Plus className="size-4" /> Agregar característica
-            </button>
+            ) : (
+              <Field label="¿Cuántos tenés?" hint="Unidades en tu depósito">
+                <input value={f.initial_stock} onChange={(e) => set("initial_stock", e.target.value)} inputMode="numeric" placeholder="10" className={inputCls} />
+              </Field>
+            )}
+            <Field label="Avisarme cuando queden" hint="Alerta de reposición">
+              <input value={f.min_stock} onChange={(e) => set("min_stock", e.target.value)} inputMode="numeric" className={inputCls} />
+            </Field>
           </div>
         </Card>
 
@@ -289,40 +238,151 @@ export function ProductForm({
           onUniversal={(v) => set("is_universal", v)}
         />
 
-        <RelationsEditor relations={f.relations} onChange={(v) => set("relations", v)} selfId={f.id} />
+        <details className="group rounded-xl border border-ink-100 bg-white shadow-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
+            <span>
+              <span className="block font-display text-lg font-bold uppercase tracking-wide">Más detalles (opcional)</span>
+              <span className="text-sm text-ink-500">Código SKU, descripción completa, garantía, costo, precio mayorista, oferta, códigos OEM, características, variantes y productos relacionados.</span>
+            </span>
+            <ChevronDown className="size-5 shrink-0 text-ink-400 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-6 border-t border-ink-100 p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Código interno (SKU)" hint={f.sku ? "Código único del producto" : "Si lo dejás vacío se genera solo"}>
+                <input value={f.sku} onChange={(e) => set("sku", e.target.value.toUpperCase())} placeholder="Automático" className={inputCls} />
+              </Field>
+              <Field label="Garantía (meses)">
+                <input value={f.warranty_months} onChange={(e) => set("warranty_months", e.target.value)} inputMode="numeric" className={inputCls} />
+              </Field>
+              <Field label="Descripción completa" className="sm:col-span-2">
+                <textarea value={f.description} onChange={(e) => set("description", e.target.value)} rows={5} className="w-full rounded-lg border border-ink-200 p-3 text-sm" />
+              </Field>
+              <Field label="Texto de garantía" className="sm:col-span-2">
+                <input value={f.warranty_text} onChange={(e) => set("warranty_text", e.target.value)} className={inputCls} />
+              </Field>
+            </div>
+
+            <div>
+              <p className="mb-3 font-semibold">Precios y costos</p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Precio anterior (se muestra tachado)" hint="Para mostrarlo como oferta">
+                  <input disabled={!canPrice} value={f.compare_at_price} onChange={(e) => set("compare_at_price", e.target.value)} inputMode="numeric" className={inputCls} />
+                </Field>
+                <Field label="Precio mayorista" hint="Para clientes mayoristas">
+                  <input disabled={!canPrice} value={f.wholesale_price} onChange={(e) => set("wholesale_price", e.target.value)} inputMode="numeric" className={inputCls} />
+                </Field>
+                <Field label="Costo (sin IVA)" hint={margin !== null ? `Ganancia estimada: ${margin} %` : "Para calcular tu ganancia"}>
+                  <input disabled={!canPrice} value={f.cost} onChange={(e) => set("cost", e.target.value)} inputMode="numeric" className={inputCls} />
+                </Field>
+                <Field label="IVA">
+                  <select value={f.tax_rate} onChange={(e) => set("tax_rate", Number(e.target.value) as 0 | 5 | 10)} className={inputCls}>
+                    <option value={10}>10 %</option>
+                    <option value={5}>5 %</option>
+                    <option value={0}>Exento</option>
+                  </select>
+                </Field>
+                <Field label="Peso (gramos)">
+                  <input value={f.weight_grams} onChange={(e) => set("weight_grams", e.target.value)} inputMode="numeric" className={inputCls} />
+                </Field>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 font-semibold">Códigos OEM y referencias</p>
+              <p className="mb-3 text-xs text-ink-500">Sirven para que te encuentren buscando el código original o el de otra marca.</p>
+              <div className="space-y-2">
+                {f.references.map((r, i) => (
+                  <div key={i} className="flex flex-wrap gap-2">
+                    <select
+                      value={r.kind}
+                      onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, kind: e.target.value as Ref["kind"] } : x)))}
+                      className={`${inputCls} w-44`}
+                    >
+                      <option value="oem">OEM (original)</option>
+                      <option value="manufacturer">Código fabricante</option>
+                      <option value="alternative">Alternativa</option>
+                    </select>
+                    <input value={r.code} placeholder="Código" onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)))} className={`${inputCls} w-48`} />
+                    <input value={r.brand ?? ""} placeholder="Marca (opcional)" onChange={(e) => set("references", f.references.map((x, j) => (j === i ? { ...x, brand: e.target.value } : x)))} className={`${inputCls} w-40`} />
+                    <button onClick={() => set("references", f.references.filter((_, j) => j !== i))} className="text-ink-400 hover:text-bad-600" aria-label="Quitar"><X className="size-4" /></button>
+                  </div>
+                ))}
+                <button onClick={() => set("references", [...f.references, { kind: "oem", code: "" }])} className={btnGhost}>
+                  <Plus className="size-4" /> Agregar código
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-3 font-semibold">Características técnicas</p>
+              <div className="space-y-2">
+                {f.specs.map((s, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input value={s.key} placeholder="Característica (p. ej. Posición)" onChange={(e) => set("specs", f.specs.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} className={inputCls} />
+                    <input value={s.value} placeholder="Valor (p. ej. Delantera)" onChange={(e) => set("specs", f.specs.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} className={inputCls} />
+                    <button onClick={() => set("specs", f.specs.filter((_, j) => j !== i))} className="text-ink-400 hover:text-bad-600" aria-label="Quitar"><X className="size-4" /></button>
+                  </div>
+                ))}
+                <button onClick={() => set("specs", [...f.specs, { key: "", value: "" }])} className={btnGhost}>
+                  <Plus className="size-4" /> Agregar característica
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 font-semibold">Variantes</p>
+              <p className="mb-3 text-xs text-ink-500">Para productos que vienen en versiones (p. ej. lado izquierdo / derecho). Cada versión se carga como producto propio y se agrupan con el mismo grupo.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Grupo de variantes">
+                  <div className="flex gap-2">
+                    <input value={f.variant_group} onChange={(e) => set("variant_group", e.target.value)} placeholder="ID del grupo" className={`${inputCls} font-mono text-xs`} />
+                    <button onClick={() => set("variant_group", crypto.randomUUID())} className={btnGhost} title="Crear un grupo nuevo">Nuevo</button>
+                  </div>
+                </Field>
+                <Field label="Nombre de esta variante">
+                  <input value={f.variant_label} onChange={(e) => set("variant_label", e.target.value)} placeholder="p. ej. Lado izquierdo" className={inputCls} />
+                </Field>
+              </div>
+            </div>
+
+            <RelationsEditor relations={f.relations} onChange={(v) => set("relations", v)} selfId={f.id} />
+          </div>
+        </details>
       </div>
 
       <aside className="space-y-4 xl:sticky xl:top-6 xl:h-fit">
-        <Card title="Publicación">
-          <p className="mb-3 text-sm">
-            Estado actual:{" "}
-            <strong>{f.status === "published" ? "Publicado" : f.status === "archived" ? "Archivado" : "Borrador"}</strong>
+        <Card title="Guardar">
+          <p className="mb-4 flex items-center gap-2 text-sm">
+            <span className={`size-2.5 rounded-full ${f.status === "published" ? "bg-ok-600" : f.status === "archived" ? "bg-ink-400" : "bg-warn-600"}`} />
+            {statusLabel}
           </p>
           <div className="flex flex-col gap-2">
-            <button disabled={pending} onClick={() => submit(f.status === "published" ? "published" : f.status)} className={btnDark}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : null} Guardar
-            </button>
             {canPublish && f.status !== "published" ? (
-              <button
-                disabled={pending}
-                onClick={() => window.confirm("¿Publicar el producto? Quedará visible en la tienda.") && submit("published")}
-                className={btnPrimary}
-              >
-                Guardar y publicar
+              <button disabled={pending} onClick={() => submit("published")} className={`${btnPrimary} h-12 text-base`}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : null} Publicar en la tienda
               </button>
             ) : null}
             {f.status === "published" ? (
-              <button disabled={pending} onClick={() => submit("draft")} className={btnGhost}>Despublicar (borrador)</button>
+              <button disabled={pending} onClick={() => submit("published")} className={`${btnPrimary} h-12 text-base`}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : null} Guardar cambios
+              </button>
+            ) : (
+              <button disabled={pending} onClick={() => submit(f.status === "archived" ? "archived" : "draft")} className={btnGhost}>
+                Guardar sin publicar
+              </button>
+            )}
+            {f.status === "published" ? (
+              <button disabled={pending} onClick={() => submit("draft")} className={btnGhost}>Ocultar de la tienda</button>
             ) : null}
             {f.status !== "archived" && f.id ? (
-              <button disabled={pending} onClick={() => window.confirm("¿Archivar el producto?") && submit("archived")} className={btnGhost}>Archivar</button>
+              <button disabled={pending} onClick={() => window.confirm("¿Archivar el producto? Deja de verse en la tienda.") && submit("archived")} className="text-sm text-ink-500 hover:text-ink-900">Archivar</button>
             ) : null}
           </div>
           {result ? <p className={`mt-3 text-sm ${result.ok ? "text-ok-600" : "text-bad-600"}`}>{result.text}</p> : null}
           {f.id && f.slug ? (
             <div className="mt-4 flex flex-wrap gap-3 border-t border-ink-100 pt-3 text-sm">
               <Link href={`/producto/${f.slug}?preview=1`} target="_blank" className="inline-flex items-center gap-1 font-semibold text-accent-600">
-                <Eye className="size-4" /> Vista previa
+                <Eye className="size-4" /> Ver cómo queda
               </Link>
               <button onClick={() => start(async () => { await duplicateProductAction(f.id!); })} className="inline-flex items-center gap-1 font-semibold text-ink-600">
                 <Copy className="size-4" /> Duplicar
@@ -344,35 +404,9 @@ export function ProductForm({
             </div>
           ) : null}
         </Card>
-
-        <Card title="Inventario">
-          {f.id ? (
-            <p className="mb-3 text-sm">
-              Stock físico: <strong>{onHand ?? 0}</strong>.{" "}
-              <Link href={`/admin/inventario?producto=${f.id}`} className="font-semibold text-accent-600">Registrar movimiento</Link>
-            </p>
-          ) : (
-            <Field label="Stock inicial">
-              <input value={f.initial_stock} onChange={(e) => set("initial_stock", e.target.value)} inputMode="numeric" className={inputCls} />
-            </Field>
-          )}
-          <Field label="Stock mínimo (alerta de reposición)" className="mt-3">
-            <input value={f.min_stock} onChange={(e) => set("min_stock", e.target.value)} inputMode="numeric" className={inputCls} />
-          </Field>
-        </Card>
-
-        <Card title="Variantes">
-          <p className="mb-2 text-xs text-ink-500">Agrupá productos que son variantes (p. ej. lado izquierdo / derecho). Cada variante tiene su SKU y stock.</p>
-          <Field label="Grupo de variantes">
-            <div className="flex gap-2">
-              <input value={f.variant_group} onChange={(e) => set("variant_group", e.target.value)} placeholder="ID del grupo" className={`${inputCls} font-mono text-xs`} />
-              <button onClick={() => set("variant_group", crypto.randomUUID())} className={btnGhost} title="Crear un grupo nuevo">Nuevo</button>
-            </div>
-          </Field>
-          <Field label="Etiqueta de esta variante" className="mt-2">
-            <input value={f.variant_label} onChange={(e) => set("variant_label", e.target.value)} placeholder="p. ej. Lado izquierdo" className={inputCls} />
-          </Field>
-        </Card>
+        <p className="px-1 text-xs text-ink-500">
+          Sólo lo marcado con * es obligatorio. Todo lo demás podés completarlo después.
+        </p>
       </aside>
     </div>
   );
@@ -412,7 +446,7 @@ function FitmentEditor({
   const LABELS = { confirmed: "Confirmada", unverified: "Pendiente", incompatible: "No compatible" };
 
   return (
-    <Card title="Compatibilidad con vehículos">
+    <Card title="4. ¿Para qué vehículos sirve?">
       <label className="mb-3 flex items-center gap-2 text-sm">
         <input type="checkbox" checked={universal} onChange={(e) => onUniversal(e.target.checked)} className="accent-accent-500" />
         Producto universal (sirve a cualquier vehículo; p. ej. lubricantes o líquidos)
@@ -474,7 +508,7 @@ function RelationsEditor({ relations, onChange, selfId }: { relations: Rel[]; on
     setFound((data ?? []).filter((p) => p.id !== selfId));
   }
   return (
-    <Card title="Relacionados y complementarios">
+    <Card title="Productos relacionados (se sugieren en la ficha)">
       <div className="flex flex-wrap gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), search())} placeholder="Buscar por SKU o nombre" className={`${inputCls} max-w-xs`} />
         <select value={kind} onChange={(e) => setKind(e.target.value as Rel["kind"])} className={`${inputCls} w-44`}>

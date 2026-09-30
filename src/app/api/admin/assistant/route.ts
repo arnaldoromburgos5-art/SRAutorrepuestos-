@@ -3,7 +3,8 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
-import { describeAiError, effort, historyMatchesProvider, isAiConfigured, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { describeAiError, effort, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { getAiConfig } from "@/lib/ai/config";
 import { adminSystemPrompt, adminTools, type AdminCtx } from "@/lib/ai/admin";
 import { parseImportFile, validateImport } from "@/lib/services/imports";
 
@@ -11,7 +12,8 @@ export const maxDuration = 120;
 const MAX_MESSAGES = 120;
 
 export async function POST(request: Request) {
-  if (!isAiConfigured()) return NextResponse.json({ error: "Falta configurar la clave del asistente (NVIDIA_API_KEY, GEMINI_API_KEY o ANTHROPIC_API_KEY)." }, { status: 503 });
+  const ai = await getAiConfig();
+  if (!ai) return NextResponse.json({ error: "Falta cargar la clave del asistente en Panel > Datos del negocio > Asistente de IA." }, { status: 503 });
   const { supabase, profile } = await getSession();
   if (!profile || !can(profile.role, "ai.admin")) return NextResponse.json({ error: "No tenés acceso al asistente." }, { status: 403 });
   if (!(await rateLimit(`admin-ai:${profile.id}`, 40, 600))) {
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
     else {
       const { data } = await supabase.from("ai_messages").select("role, content, created_at").eq("conversation_id", conversationId).order("id");
       rows = (data ?? []) as typeof rows;
-      if (!historyMatchesProvider(rows)) {
+      if (!historyMatchesProvider(rows, ai.provider)) {
         conversationId = null;
         rows = [];
       }
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAssistant({
+      ai,
       system: adminSystemPrompt(ctx),
       context: context || "Sin novedades.",
       history,

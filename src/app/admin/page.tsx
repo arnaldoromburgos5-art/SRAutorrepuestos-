@@ -1,160 +1,149 @@
 import Link from "next/link";
-import { AlertTriangle, Boxes, ClipboardList } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bot, Boxes, CheckCircle2, ClipboardList, PackagePlus, Settings, Tag } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { formatPyg } from "@/lib/money";
-import { PERIODS, periodRange, previousRange } from "@/lib/periods";
+import { periodRange } from "@/lib/periods";
 import { dashboardMetrics, lowStock } from "@/lib/services/operations";
-import { Card, PageHeader, Stat, Table } from "@/components/admin/ui";
-import { RankingChart, RevenueChart } from "@/components/admin/charts";
+import { orderNumber } from "@/lib/utils";
 import type { ServiceCtx } from "@/lib/services/context";
+import { SalesOverview } from "@/components/admin/sales-overview";
 
-const pct = (a: number, b: number) => (b ? `${a >= b ? "+" : ""}${Math.round(((a - b) / b) * 100)} % vs. período anterior` : "sin datos previos");
+function Action({ href, icon: Icon, title, text, primary }: { href: string; icon: typeof Bot; title: string; text: string; primary?: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={`group flex items-start gap-4 rounded-2xl border p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-lift ${
+        primary ? "border-accent-500 bg-accent-500 text-white" : "border-ink-100 bg-white"
+      }`}
+    >
+      <span className={`grid size-12 shrink-0 place-items-center rounded-xl ${primary ? "bg-white/20" : "bg-ink-900 text-white"}`}>
+        <Icon className="size-6" />
+      </span>
+      <span>
+        <span className="block font-display text-xl font-bold">{title}</span>
+        <span className={`text-sm ${primary ? "text-white/85" : "text-ink-500"}`}>{text}</span>
+      </span>
+    </Link>
+  );
+}
 
-export default async function AdminHome({ searchParams }: { searchParams: Promise<{ periodo?: string; error?: string }> }) {
+function BigNumber({ label, value, tone }: { label: string; value: React.ReactNode; tone?: "warn" | "ok" }) {
+  return (
+    <div className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
+      <p className="text-sm text-ink-500">{label}</p>
+      <p className={`mt-1 font-display text-4xl font-bold tabular-nums ${tone === "warn" ? "text-warn-600" : tone === "ok" ? "text-ok-600" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+export default async function AdminHome({ searchParams }: { searchParams: Promise<{ error?: string; periodo?: string }> }) {
   const sp = await searchParams;
   const { supabase, profile } = await requireStaff();
   const ctx: ServiceCtx = { supabase, profile, source: "admin_ui" };
-  const range = periodRange(sp.periodo);
-  const canAnalytics = can(profile.role, "analytics.read");
+  const month = periodRange("mes");
 
-  const [m, prev, low, attention] = await Promise.all([
-    canAnalytics ? dashboardMetrics(ctx, range.from, range.to) : null,
-    canAnalytics ? dashboardMetrics(ctx, ...Object.values(previousRange(range.from, range.to)) as [Date, Date]) : null,
-    can(profile.role, "inventory.read") ? lowStock(ctx, 8) : [],
+  const [m, low, toPrepare, { count: productCount }] = await Promise.all([
+    can(profile.role, "analytics.read") ? dashboardMetrics(ctx, month.from, month.to) : null,
+    can(profile.role, "inventory.read") ? lowStock(ctx, 6) : [],
     can(profile.role, "orders.read")
-      ? supabase.from("orders").select("id, number, status, attention_note, total").or("needs_attention.eq.true,status.eq.paid").order("created_at").limit(8)
+      ? supabase.from("orders").select("id, number, customer_name, total, status, needs_attention, attention_note").or("needs_attention.eq.true,status.in.(paid,preparing)").order("created_at").limit(8)
       : { data: [] },
+    supabase.from("products").select("id", { count: "exact", head: true }).neq("status", "archived"),
   ]);
+  const pending = toPrepare.data ?? [];
+  const firstName = profile.full_name?.split(" ")[0] ?? "";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Resumen del negocio"
-        description={`Hola, ${profile.full_name?.split(" ")[0] ?? ""}. Indicadores de ${PERIODS[range.key].toLowerCase()}.`}
-        actions={
-          <div className="flex flex-wrap gap-1 rounded-lg border border-ink-200 bg-white p-1">
-            {Object.entries(PERIODS).map(([k, label]) => (
-              <Link
-                key={k}
-                href={`/admin?periodo=${k}`}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${range.key === k ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-100"}`}
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
-        }
-      />
+    <div className="mx-auto max-w-5xl space-y-8">
+      <div>
+        <h1 className="font-display text-4xl font-bold">Hola{firstName ? `, ${firstName}` : ""} 👋</h1>
+        <p className="text-ink-500">¿Qué querés hacer hoy?</p>
+      </div>
       {sp.error === "permiso" ? <p className="rounded-lg bg-warn-50 p-3 text-sm text-warn-600">No tenés permiso para esa sección.</p> : null}
 
-      {m && prev ? (
-        <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Ingresos" value={formatPyg(m.revenue)} hint={pct(m.revenue, prev.revenue)}
-              definition="Total cobrado (IVA incluido, con envío y descuentos) de pedidos pagados en el período según fecha de pago, sin contar los cancelados." />
-            <Stat label="Pedidos" value={m.orders} hint={pct(m.orders, prev.orders)} definition="Pedidos con pago aprobado en el período, sin cancelados." />
-            <Stat label="Ticket promedio" value={formatPyg(m.avg_ticket)} hint={pct(m.avg_ticket, prev.avg_ticket)} definition="Ingresos divididos por la cantidad de pedidos pagados." />
-            <Stat
-              label="Margen estimado"
-              value={formatPyg(m.margin)}
-              hint={`Cubre ${m.margin_coverage} % de las ventas`}
-              definition="Ventas netas de IVA menos el costo registrado. Sólo incluye productos con costo cargado; el porcentaje indica qué parte de las ventas tiene costo."
-            />
-            <Stat label="Clientes nuevos" value={m.new_customers} hint={`${m.returning_customers} recurrentes`} definition="Nuevo: su primer pedido pagado ocurre en este período (identificado por correo). Recurrente: ya había comprado antes." />
-            <Stat
-              label="Conversión"
-              value={m.sessions ? `${((m.sessions_with_purchase / m.sessions) * 100).toFixed(1)} %` : "—"}
-              hint={`${m.sessions} sesiones`}
-              definition="Sesiones de navegación que terminaron en compra sobre el total de sesiones registradas en el período."
-            />
-            <Stat
-              label="Abandono de carrito"
-              value={m.sessions_with_cart ? `${Math.round((1 - m.sessions_with_purchase / m.sessions_with_cart) * 100)} %` : "—"}
-              hint={`${m.sessions_with_cart} sesiones con carrito`}
-              definition="Sesiones que agregaron productos al carrito y no compraron, sobre las sesiones que agregaron al carrito."
-            />
-            <Stat
-              label="Cancelaciones y devoluciones"
-              value={m.cancelled_paid + m.returns}
-              hint={`${m.cancelled_unpaid} reservas vencidas · reintegros ${formatPyg(m.refunds)}`}
-              tone={m.cancelled_paid + m.returns > 0 ? "warn" : undefined}
-              definition="Pedidos pagados cancelados más devoluciones registradas en el período. Las reservas vencidas (sin pago) se muestran aparte."
-            />
+      {productCount === 0 && can(profile.role, "products.write") ? (
+        <div className="rounded-2xl border-2 border-dashed border-accent-500/50 bg-accent-50 p-6">
+          <p className="font-display text-2xl font-bold">Tu tienda todavía no tiene productos</p>
+          <p className="mt-1 text-ink-600">Empezá cargando el primero: sólo necesitás una foto, el nombre, el precio y cuántos tenés.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/admin/productos/nuevo" className="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-5 py-3 font-semibold text-white hover:bg-accent-600">
+              <PackagePlus className="size-5" /> Cargar mi primer producto
+            </Link>
+            {can(profile.role, "settings.manage") ? (
+              <Link href="/admin/configuracion" className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-5 py-3 font-semibold">
+                <Settings className="size-5" /> Completar datos del negocio
+              </Link>
+            ) : null}
           </div>
+        </div>
+      ) : null}
 
-          <div className="grid gap-6 xl:grid-cols-3">
-            <Card title="Ingresos por día" className="xl:col-span-2">
-              <RevenueChart data={m.by_day} />
-            </Card>
-            <Card title="Categorías más vendidas">
-              <RankingChart data={m.top_categories.slice(0, 6)} />
-            </Card>
-          </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {can(profile.role, "products.write") ? <Action href="/admin/productos/nuevo" icon={PackagePlus} title="Cargar un producto" text="Foto, nombre, precio y stock" primary /> : null}
+        {can(profile.role, "orders.read") ? <Action href="/admin/pedidos?estado=paid" icon={ClipboardList} title="Pedidos para preparar" text={pending.length ? `${pending.length} esperando` : "Ver todos los pedidos"} /> : null}
+        {can(profile.role, "inventory.adjust") ? <Action href="/admin/inventario" icon={Boxes} title="Actualizar stock" text="Registrar mercadería que llegó" /> : null}
+        {can(profile.role, "promotions.manage") ? <Action href="/admin/promociones" icon={Tag} title="Crear una oferta" text="Descuentos y cupones" /> : null}
+        {can(profile.role, "ai.admin") ? <Action href="/admin/asistente" icon={Bot} title="Pedírselo al asistente" text="Escribí lo que necesitás en tus palabras" /> : null}
+      </div>
 
-          <Card title="Productos más vendidos">
-            <Table>
-              <thead>
-                <tr><th>Producto</th><th>SKU</th><th className="text-right">Unidades</th><th className="text-right">Ventas</th></tr>
-              </thead>
-              <tbody>
-                {m.top_products.map((p) => (
-                  <tr key={p.sku}>
-                    <td>{p.product_id ? <Link className="hover:text-accent-600" href={`/admin/productos/${p.product_id}`}>{p.name}</Link> : p.name}</td>
-                    <td className="text-ink-500">{p.sku}</td>
-                    <td className="text-right tabular-nums">{p.units}</td>
-                    <td className="text-right tabular-nums">{formatPyg(p.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </Card>
-        </>
+      {m ? (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <BigNumber label="Vendido este mes" value={formatPyg(m.revenue)} />
+          <BigNumber label="Pedidos este mes" value={m.orders} />
+          <BigNumber label="Productos por reponer" value={low.length} tone={low.length ? "warn" : "ok"} />
+        </div>
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {can(profile.role, "orders.read") ? (
-          <Card title="Pedidos para atender" actions={<Link href="/admin/pedidos" className="text-sm font-semibold text-accent-600">Ver todos</Link>}>
-            {attention.data?.length ? (
-              <ul className="divide-y divide-ink-100 text-sm">
-                {attention.data.map((o) => (
-                  <li key={o.id} className="flex items-center justify-between gap-3 py-2">
-                    <Link href={`/admin/pedidos/${o.id}`} className="flex items-center gap-2 font-medium hover:text-accent-600">
-                      {o.attention_note ? <AlertTriangle className="size-4 text-bad-600" /> : <ClipboardList className="size-4 text-ink-400" />}
-                      SR-{String(o.number).padStart(6, "0")}
+          <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
+            <h2 className="mb-3 font-display text-xl font-bold">Para atender ahora</h2>
+            {pending.length ? (
+              <ul className="divide-y divide-ink-100">
+                {pending.map((o) => (
+                  <li key={o.id}>
+                    <Link href={`/admin/pedidos/${o.id}`} className="flex items-center gap-3 py-3 hover:text-accent-600">
+                      {o.needs_attention ? <AlertTriangle className="size-5 shrink-0 text-bad-600" /> : <ClipboardList className="size-5 shrink-0 text-accent-500" />}
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{orderNumber(o.number)} · {o.customer_name}</span>
+                        <span className="block truncate text-sm text-ink-500">
+                          {o.attention_note ?? (o.status === "paid" ? "Pagado: preparalo para enviar o retirar" : "En preparación")}
+                        </span>
+                      </span>
+                      <ArrowRight className="size-4 text-ink-300" />
                     </Link>
-                    <span className="truncate text-xs text-ink-500">{o.attention_note ?? "Pagado, listo para preparar"}</span>
-                    <span className="tabular-nums">{formatPyg(o.total)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-ink-500">No hay pedidos pendientes de atención.</p>
+              <p className="flex items-center gap-2 text-ink-500"><CheckCircle2 className="size-5 text-ok-600" /> Nada pendiente. ¡Todo al día!</p>
             )}
-          </Card>
+          </section>
         ) : null}
         {can(profile.role, "inventory.read") ? (
-          <Card title="Stock bajo el mínimo" actions={<Link href="/admin/inventario" className="text-sm font-semibold text-accent-600">Inventario</Link>}>
+          <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
+            <h2 className="mb-3 font-display text-xl font-bold">Se está por acabar</h2>
             {low.length ? (
-              <ul className="divide-y divide-ink-100 text-sm">
+              <ul className="divide-y divide-ink-100">
                 {low.map((p) => (
-                  <li key={p.product_id} className="flex items-center justify-between gap-3 py-2">
-                    <span className="flex items-center gap-2">
-                      <Boxes className="size-4 text-warn-600" />
-                      <span className="line-clamp-1">{p.name}</span>
-                    </span>
-                    <span className="shrink-0 text-xs text-ink-500">
-                      {p.available} disp. / mín. {p.min_stock}
-                    </span>
+                  <li key={p.product_id}>
+                    <Link href={`/admin/inventario?producto=${p.product_id}`} className="flex items-center gap-3 py-3 hover:text-accent-600">
+                      <Boxes className="size-5 shrink-0 text-warn-600" />
+                      <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                      <span className="shrink-0 text-sm text-ink-500">quedan {p.available}</span>
+                    </Link>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-ink-500">Todo el stock está por encima del mínimo.</p>
+              <p className="flex items-center gap-2 text-ink-500"><CheckCircle2 className="size-5 text-ok-600" /> Tenés stock suficiente de todo.</p>
             )}
-          </Card>
+          </section>
         ) : null}
       </div>
+
+      {can(profile.role, "analytics.read") ? <SalesOverview ctx={ctx} periodo={sp.periodo} basePath="/admin" /> : null}
     </div>
   );
 }

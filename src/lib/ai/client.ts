@@ -5,43 +5,30 @@ import OpenAI from "openai";
 import type { ZodType } from "zod";
 
 // ---------------------------------------------------------------------------
-// Proveedor de IA: NVIDIA (API gratuita de build.nvidia.com), Google Gemini o Anthropic Claude.
-// AI_PROVIDER=nvidia|gemini|anthropic. Si no se indica, se usa el primero que tenga clave cargada.
+// Proveedor de IA: Google Gemini, NVIDIA o Anthropic Claude. La clave y el modelo se cargan en
+// Panel > Datos del negocio > Asistente de IA (o por variables de entorno). Ver ./config.ts.
 // ---------------------------------------------------------------------------
-export type AiProvider = "nvidia" | "gemini" | "anthropic";
+import type { AiConfig, AiProvider } from "./config";
+export type { AiConfig, AiProvider } from "./config";
 
-const HAS_KEY: Record<AiProvider, () => boolean> = {
-  nvidia: () => Boolean(process.env.NVIDIA_API_KEY),
-  gemini: () => Boolean(process.env.GEMINI_API_KEY),
-  anthropic: () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
-};
+// Modelos gratuitos de respaldo de Gemini cuando el principal está saturado (503) o sin cuota (429).
+const geminiFallbacks = (model: string) =>
+  [...new Set([model, ...(process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean)])];
 
-export function aiProvider(): AiProvider | null {
-  const explicit = process.env.AI_PROVIDER as AiProvider | undefined;
-  if (explicit && explicit in HAS_KEY && HAS_KEY[explicit]()) return explicit;
-  return (["nvidia", "gemini", "anthropic"] as const).find((p) => HAS_KEY[p]()) ?? null;
+// Un cliente por clave (la clave puede cambiar desde el panel).
+const clients = new Map<string, Anthropic | GoogleGenAI | OpenAI>();
+function clientFor<T>(ai: AiConfig, make: () => T): T {
+  const id = `${ai.provider}:${ai.apiKey}`;
+  if (!clients.has(id)) {
+    if (clients.size > 6) clients.clear();
+    clients.set(id, make() as never);
+  }
+  return clients.get(id) as T;
 }
-
-export const isAiConfigured = () => aiProvider() !== null;
-
-const NVIDIA_MODEL = () => process.env.NVIDIA_MODEL || "nvidia/nemotron-3-super-120b-a12b";
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.6-flash";
-// Modelos gratuitos de respaldo cuando el principal está saturado (503) o sin cuota (429).
-const GEMINI_FALLBACKS = () => [...new Set([GEMINI_MODEL(), ...(process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean)])];
-const ANTHROPIC_MODEL = () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
-
-let anthropicClient: Anthropic | null = null;
-let geminiClient: GoogleGenAI | null = null;
-let nvidiaClient: OpenAI | null = null;
-const anthropic = () => (anthropicClient ??= new Anthropic({ maxRetries: 2, timeout: 120_000 }));
-const gemini = () => (geminiClient ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
-const nvidia = () =>
-  (nvidiaClient ??= new OpenAI({
-    apiKey: process.env.NVIDIA_API_KEY,
-    baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
-    maxRetries: 2,
-    timeout: 90_000,
-  }));
+const anthropic = (ai: AiConfig) => clientFor(ai, () => new Anthropic({ apiKey: ai.apiKey, maxRetries: 2, timeout: 120_000 }));
+const gemini = (ai: AiConfig) => clientFor(ai, () => new GoogleGenAI({ apiKey: ai.apiKey }));
+const nvidia = (ai: AiConfig) =>
+  clientFor(ai, () => new OpenAI({ apiKey: ai.apiKey, baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1", maxRetries: 2, timeout: 90_000 }));
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export function effort(value: string | undefined, fallback: Effort): Effort {
@@ -97,12 +84,12 @@ const isGeminiRow = (m: StoredMessage) => hasKey(m, "gemini");
 const isOpenAiRow = (m: StoredMessage) => hasKey(m, "openai");
 const rowProvider = (m: StoredMessage): AiProvider => (isGeminiRow(m) ? "gemini" : isOpenAiRow(m) ? "nvidia" : "anthropic");
 
-export function historyMatchesProvider(rows: StoredMessage[]) {
-  const provider = aiProvider();
+export function historyMatchesProvider(rows: StoredMessage[], provider: AiProvider) {
   return rows.every((r) => rowProvider(r) === provider);
 }
 
 type RunOptions<Ctx> = {
+  ai: AiConfig;
   system: string;
   /** Contexto del servidor para este turno (fecha, vehículo, novedades). Tiene autoridad de operador. */
   context: string;
@@ -116,11 +103,9 @@ type RunOptions<Ctx> = {
 
 /** Ejecuta un turno del asistente con el proveedor configurado. */
 export async function runAssistant<Ctx>(opts: RunOptions<Ctx>): Promise<{ toStore: StoredMessage[]; text: string }> {
-  const provider = aiProvider();
-  if (provider === "nvidia") return runOpenAiCompatible(opts);
-  if (provider === "gemini") return runGemini(opts);
-  if (provider === "anthropic") return runAnthropic(opts);
-  throw new Error("No hay proveedor de IA configurado (NVIDIA_API_KEY, GEMINI_API_KEY o ANTHROPIC_API_KEY).");
+  if (opts.ai.provider === "nvidia") return runOpenAiCompatible(opts);
+  if (opts.ai.provider === "gemini") return runGemini(opts);
+  return runAnthropic(opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +120,8 @@ async function runOpenAiCompatible<Ctx>(opts: RunOptions<Ctx>) {
   let text = "";
 
   for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
-    const response = await nvidia().chat.completions.create({
-      model: NVIDIA_MODEL(),
+    const response = await nvidia(opts.ai).chat.completions.create({
+      model: opts.ai.model,
       messages: [{ role: "system", content: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}` }, ...history, ...appended],
       tools,
       tool_choice: "auto",
@@ -182,9 +167,9 @@ async function runGemini<Ctx>(opts: RunOptions<Ctx>) {
 
   const generate = async (contents: Content[]) => {
     let lastError: unknown;
-    for (const model of GEMINI_FALLBACKS()) {
+    for (const model of geminiFallbacks(opts.ai.model)) {
       try {
-        return await gemini().models.generateContent({
+        return await gemini(opts.ai).models.generateContent({
           model,
           contents,
           config: {
@@ -260,8 +245,8 @@ async function runAnthropic<Ctx>(opts: RunOptions<Ctx>) {
   let text = "";
 
   for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
-    const response = await anthropic().beta.messages.create({
-      model: ANTHROPIC_MODEL(),
+    const response = await anthropic(opts.ai).beta.messages.create({
+      model: opts.ai.model,
       max_tokens: 16000,
       system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
       messages: [...history, ...turn, ...appended],
@@ -296,6 +281,35 @@ async function runAnthropic<Ctx>(opts: RunOptions<Ctx>) {
     appended.push({ role: "user", content: results });
   }
   return { text, toStore: [...turn, ...appended].map((m): StoredMessage => ({ role: m.role, content: m.content })) };
+}
+
+/** Prueba rápida de la clave y el modelo: pide una respuesta mínima al proveedor. */
+export async function testAiConnection(ai: AiConfig): Promise<{ ok: true; reply: string; model: string } | { ok: false; error: string }> {
+  try {
+    const prompt = "Respondé sólo con la palabra: funciona";
+    if (ai.provider === "gemini") {
+      let lastError: unknown;
+      for (const model of geminiFallbacks(ai.model)) {
+        try {
+          const r = await gemini(ai).models.generateContent({ model, contents: prompt });
+          return { ok: true, reply: (r.text ?? "").trim().slice(0, 60), model };
+        } catch (e) {
+          lastError = e;
+          if (!(e instanceof ApiError) || ![429, 500, 503].includes(e.status)) throw e;
+        }
+      }
+      throw lastError;
+    }
+    if (ai.provider === "nvidia") {
+      const r = await nvidia(ai).chat.completions.create({ model: ai.model, max_tokens: 20, messages: [{ role: "user", content: prompt }] });
+      return { ok: true, reply: (r.choices[0]?.message?.content ?? "").trim().slice(0, 60), model: ai.model };
+    }
+    const r = await anthropic(ai).messages.create({ model: ai.model, max_tokens: 64, messages: [{ role: "user", content: prompt }] });
+    const text = r.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+    return { ok: true, reply: text.slice(0, 60), model: ai.model };
+  } catch (e) {
+    return { ok: false, error: describeAiError(e) };
+  }
 }
 
 export function describeAiError(e: unknown) {
