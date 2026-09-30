@@ -24,7 +24,7 @@ export function aiProvider(): AiProvider | null {
 
 export const isAiConfigured = () => aiProvider() !== null;
 
-const NVIDIA_MODEL = () => process.env.NVIDIA_MODEL || "meta/llama-3.3-70b-instruct";
+const NVIDIA_MODEL = () => process.env.NVIDIA_MODEL || "nvidia/nemotron-3-super-120b-a12b";
 const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.7-flash";
 const ANTHROPIC_MODEL = () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
 
@@ -286,8 +286,9 @@ async function runAnthropic<Ctx>(opts: RunOptions<Ctx>) {
 export function describeAiError(e: unknown) {
   if (e instanceof OpenAI.APIError) {
     if (e.status === 429) return "El asistente alcanzó el límite gratuito de consultas por ahora. Probá de nuevo en un minuto.";
-    if (e.status === 401 || e.status === 403) return "La clave de NVIDIA no es válida (revisá NVIDIA_API_KEY).";
-    if (e.status === 404) return "El modelo configurado no está disponible (revisá NVIDIA_MODEL).";
+    if (e.status === 401 || e.status === 403) return "NVIDIA rechazó la clave: revisá NVIDIA_API_KEY y que tu cuenta de build.nvidia.com esté verificada y con créditos.";
+    if (e.status === 404 || e.status === 410) return "El modelo configurado ya no está disponible en NVIDIA: cambiá NVIDIA_MODEL.";
+    console.error("NVIDIA", e.status, e.message);
     return "El asistente no está disponible en este momento.";
   }
   if (e instanceof ApiError) {
