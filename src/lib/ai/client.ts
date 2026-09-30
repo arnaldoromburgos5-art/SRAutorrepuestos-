@@ -1,32 +1,45 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError, GoogleGenAI, type Content, type FunctionCall, type Part } from "@google/genai";
+import OpenAI from "openai";
 import type { ZodType } from "zod";
 
 // ---------------------------------------------------------------------------
-// Proveedor de IA: Google Gemini (capa gratuita) o Anthropic Claude.
-// AI_PROVIDER=gemini|anthropic. Si no se indica, se usa el que tenga clave cargada (Gemini primero).
+// Proveedor de IA: NVIDIA (API gratuita de build.nvidia.com), Google Gemini o Anthropic Claude.
+// AI_PROVIDER=nvidia|gemini|anthropic. Si no se indica, se usa el primero que tenga clave cargada.
 // ---------------------------------------------------------------------------
-export type AiProvider = "gemini" | "anthropic";
+export type AiProvider = "nvidia" | "gemini" | "anthropic";
+
+const HAS_KEY: Record<AiProvider, () => boolean> = {
+  nvidia: () => Boolean(process.env.NVIDIA_API_KEY),
+  gemini: () => Boolean(process.env.GEMINI_API_KEY),
+  anthropic: () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+};
 
 export function aiProvider(): AiProvider | null {
-  const explicit = process.env.AI_PROVIDER;
-  if (explicit === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
-  if (explicit === "anthropic" && (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)) return "anthropic";
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "anthropic";
-  return null;
+  const explicit = process.env.AI_PROVIDER as AiProvider | undefined;
+  if (explicit && explicit in HAS_KEY && HAS_KEY[explicit]()) return explicit;
+  return (["nvidia", "gemini", "anthropic"] as const).find((p) => HAS_KEY[p]()) ?? null;
 }
 
 export const isAiConfigured = () => aiProvider() !== null;
 
+const NVIDIA_MODEL = () => process.env.NVIDIA_MODEL || "meta/llama-3.3-70b-instruct";
 const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.7-flash";
 const ANTHROPIC_MODEL = () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
 
 let anthropicClient: Anthropic | null = null;
 let geminiClient: GoogleGenAI | null = null;
+let nvidiaClient: OpenAI | null = null;
 const anthropic = () => (anthropicClient ??= new Anthropic({ maxRetries: 2, timeout: 120_000 }));
 const gemini = () => (geminiClient ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
+const nvidia = () =>
+  (nvidiaClient ??= new OpenAI({
+    apiKey: process.env.NVIDIA_API_KEY,
+    baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
+    maxRetries: 2,
+    timeout: 90_000,
+  }));
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export function effort(value: string | undefined, fallback: Effort): Effort {
@@ -77,11 +90,14 @@ async function executeTool<Ctx>(tools: ToolSpec<Ctx>[], name: string | undefined
 // ---------------------------------------------------------------------------
 export type StoredMessage = { role: "user" | "assistant" | "system"; content: unknown };
 
-const isGeminiRow = (m: StoredMessage) => typeof m.content === "object" && m.content !== null && "gemini" in (m.content as object);
+const hasKey = (m: StoredMessage, key: string) => typeof m.content === "object" && m.content !== null && !Array.isArray(m.content) && key in (m.content as object);
+const isGeminiRow = (m: StoredMessage) => hasKey(m, "gemini");
+const isOpenAiRow = (m: StoredMessage) => hasKey(m, "openai");
+const rowProvider = (m: StoredMessage): AiProvider => (isGeminiRow(m) ? "gemini" : isOpenAiRow(m) ? "nvidia" : "anthropic");
 
 export function historyMatchesProvider(rows: StoredMessage[]) {
   const provider = aiProvider();
-  return rows.every((r) => (provider === "gemini" ? isGeminiRow(r) : !isGeminiRow(r)));
+  return rows.every((r) => rowProvider(r) === provider);
 }
 
 type RunOptions<Ctx> = {
@@ -99,9 +115,58 @@ type RunOptions<Ctx> = {
 /** Ejecuta un turno del asistente con el proveedor configurado. */
 export async function runAssistant<Ctx>(opts: RunOptions<Ctx>): Promise<{ toStore: StoredMessage[]; text: string }> {
   const provider = aiProvider();
+  if (provider === "nvidia") return runOpenAiCompatible(opts);
   if (provider === "gemini") return runGemini(opts);
   if (provider === "anthropic") return runAnthropic(opts);
-  throw new Error("No hay proveedor de IA configurado (GEMINI_API_KEY o ANTHROPIC_API_KEY).");
+  throw new Error("No hay proveedor de IA configurado (NVIDIA_API_KEY, GEMINI_API_KEY o ANTHROPIC_API_KEY).");
+}
+
+// ---------------------------------------------------------------------------
+// NVIDIA (API compatible con OpenAI: integrate.api.nvidia.com)
+// ---------------------------------------------------------------------------
+type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+
+async function runOpenAiCompatible<Ctx>(opts: RunOptions<Ctx>) {
+  const history = opts.history.filter(isOpenAiRow).map((r) => (r.content as { openai: ChatMessage }).openai);
+  const appended: ChatMessage[] = [{ role: "user", content: opts.userText }];
+  const tools = opts.tools.map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+  let text = "";
+
+  for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
+    const response = await nvidia().chat.completions.create({
+      model: NVIDIA_MODEL(),
+      messages: [{ role: "system", content: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}` }, ...history, ...appended],
+      tools,
+      tool_choice: "auto",
+      temperature: 0.2,
+      max_tokens: 2048,
+    });
+    const msg = response.choices[0]?.message;
+    if (!msg) {
+      text = "Disculpá, no pude responder eso. Si tenés una consulta sobre repuestos o pedidos, contame.";
+      break;
+    }
+    const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
+    appended.push({ role: "assistant", content: msg.content ?? "", ...(calls.length ? { tool_calls: calls } : {}) });
+    text = (msg.content ?? "").trim();
+    if (!calls.length) break;
+
+    for (const call of calls) {
+      let args: unknown = {};
+      let parseError: string | null = null;
+      try {
+        args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+      } catch {
+        parseError = "Los argumentos no son JSON válido.";
+      }
+      const r = parseError ? { ok: false, output: parseError } : await executeTool(opts.tools, call.function.name, args, opts.ctx);
+      appended.push({ role: "tool", tool_call_id: call.id, content: r.ok ? r.output : `ERROR: ${r.output}` });
+    }
+  }
+  return {
+    text,
+    toStore: appended.map((m): StoredMessage => ({ role: m.role === "assistant" ? "assistant" : "user", content: { openai: m } })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +239,7 @@ async function runAnthropic<Ctx>(opts: RunOptions<Ctx>) {
     { role: "user", content: opts.userText },
     { role: "system", content: opts.context },
   ];
-  const history = opts.history.filter((r) => !isGeminiRow(r)) as MessageParam[];
+  const history = opts.history.filter((r) => rowProvider(r) === "anthropic") as MessageParam[];
   const appended: MessageParam[] = [];
   const toolDefs = opts.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema as Anthropic.Beta.BetaTool.InputSchema }));
   let text = "";
@@ -219,6 +284,12 @@ async function runAnthropic<Ctx>(opts: RunOptions<Ctx>) {
 }
 
 export function describeAiError(e: unknown) {
+  if (e instanceof OpenAI.APIError) {
+    if (e.status === 429) return "El asistente alcanzó el límite gratuito de consultas por ahora. Probá de nuevo en un minuto.";
+    if (e.status === 401 || e.status === 403) return "La clave de NVIDIA no es válida (revisá NVIDIA_API_KEY).";
+    if (e.status === 404) return "El modelo configurado no está disponible (revisá NVIDIA_MODEL).";
+    return "El asistente no está disponible en este momento.";
+  }
   if (e instanceof ApiError) {
     if (e.status === 429) return "El asistente alcanzó el límite gratuito de consultas por ahora. Probá de nuevo en un minuto.";
     if (e.status === 400 || e.status === 403) return "El asistente no está configurado correctamente (revisá GEMINI_API_KEY y GEMINI_MODEL).";

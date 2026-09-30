@@ -1,8 +1,8 @@
 # SR Autorrepuestos
 
-Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (Google Gemini o Anthropic Claude): uno comercial para compradores y otro interno para administradores.
+Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (NVIDIA, Google Gemini o Anthropic Claude): uno comercial para compradores y otro interno para administradores.
 
-- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · Gemini API (o Claude API) · Vercel.
+- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · IA: NVIDIA, Gemini o Claude · Vercel.
 - **Moneda:** guaraníes (PYG, IVA incluido). Reales y dólares se muestran como referencia.
 - **Pagos:** tarjetas mediante Bancard vPOS, con un simulador para desarrollo.
 - **Entregas:** retiro en el local, envío a domicilio (Asunción y Central) y envío por agencia al interior.
@@ -47,7 +47,7 @@ Requisitos: Node.js 20.9 o superior y una cuenta gratuita en [Supabase](https://
 4. **Variables de entorno.** Copiá `.env.example` como `.env.local` y completá:
    - `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` (en *Project Settings → API*).
    - `SUPABASE_SERVICE_ROLE_KEY` (sólo servidor; nunca la expongas).
-   - `GEMINI_API_KEY` para los asistentes: es gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey). También podés usar Claude con `AI_PROVIDER=anthropic` y `ANTHROPIC_API_KEY`.
+   - `NVIDIA_API_KEY` para los asistentes: es gratis en [build.nvidia.com](https://build.nvidia.com) (usa `meta/llama-3.3-70b-instruct`). Alternativas: `GEMINI_API_KEY`, gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey). También podés usar Claude con `AI_PROVIDER=anthropic` y `ANTHROPIC_API_KEY`.
    - `PAYMENT_PROVIDER=mock` para probar compras sin cobro real.
 5. **Iniciar**
    ```bash
@@ -140,7 +140,7 @@ src/lib/ai/            asistentes (herramientas, bucle con Claude, ejecución de
 src/lib/payments/      Bancard y simulador
 ```
 
-Los asistentes usan Google Gemini (`gemini-3.7-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
+Los asistentes eligen el proveedor con `AI_PROVIDER`: `nvidia` (API gratuita de NVIDIA, modelo `NVIDIA_MODEL`, por defecto `meta/llama-3.3-70b-instruct`), `gemini` (`gemini-3.7-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
 
 ---
 

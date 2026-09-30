@@ -11,7 +11,7 @@ export const maxDuration = 120;
 const MAX_MESSAGES = 120;
 
 export async function POST(request: Request) {
-  if (!isAiConfigured()) return NextResponse.json({ error: "Falta configurar GEMINI_API_KEY (o ANTHROPIC_API_KEY)." }, { status: 503 });
+  if (!isAiConfigured()) return NextResponse.json({ error: "Falta configurar la clave del asistente (NVIDIA_API_KEY, GEMINI_API_KEY o ANTHROPIC_API_KEY)." }, { status: 503 });
   const { supabase, profile } = await getSession();
   if (!profile || !can(profile.role, "ai.admin")) return NextResponse.json({ error: "No tenés acceso al asistente." }, { status: 403 });
   if (!(await rateLimit(`admin-ai:${profile.id}`, 40, 600))) {
