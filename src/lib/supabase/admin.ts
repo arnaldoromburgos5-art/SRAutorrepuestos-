@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import { supabaseUrl } from "@/lib/env";
+import { supabaseSecretKey, supabaseUrl } from "@/lib/env";
 import type { AnyClient } from "./types";
 
 let cached: AnyClient | null = null;
@@ -11,9 +11,7 @@ let cached: AnyClient | null = null;
  * Nunca lo uses para ejecutar acciones pedidas por un administrador: esas van con su sesión.
  */
 export function createServiceClient(): AnyClient {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY");
-  cached ??= createClient(supabaseUrl(), key, {
+  cached ??= createClient(supabaseUrl(), supabaseSecretKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as AnyClient;
   return cached;

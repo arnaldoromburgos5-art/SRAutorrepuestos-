@@ -86,7 +86,8 @@ export async function searchCatalog(params: SearchParams) {
     p_in_stock: params.inStock ?? false,
     p_version: params.versionId ?? null,
     p_compat: params.compat ?? (params.versionId ? "exclude_incompatible" : "all"),
-    p_sort: params.sort === "popular" ? "popular" : params.sort ?? (params.q ? "relevance" : "popular"),
+    // "relevance" con vehículo elegido ordena primero los compatibles confirmados.
+    p_sort: params.sort ?? (params.q || params.versionId ? "relevance" : "popular"),
     p_limit: params.limit ?? 24,
     p_offset: params.offset ?? 0,
     p_on_sale: params.onSale ?? false,

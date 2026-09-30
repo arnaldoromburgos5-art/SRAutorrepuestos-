@@ -37,7 +37,7 @@ export function SortSelect() {
         onChange={(e) => update({ orden: e.target.value || null })}
         className="h-10 rounded-xl border border-ink-200 bg-white px-3 text-sm"
       >
-        <option value="">{params.get("q") ? "Relevancia" : "Más vendidos"}</option>
+        <option value="">{params.get("q") ? "Relevancia" : "Recomendados"}</option>
         <option value="price_asc">Menor precio</option>
         <option value="price_desc">Mayor precio</option>
         <option value="newest">Novedades</option>

@@ -2,19 +2,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { motion } from "motion/react";
 import type { CatalogItem } from "@/lib/types";
 import { AddToCartButton } from "./add-to-cart";
 import { CompatBadge, Price, StockLabel } from "./ui";
 
 export function ProductCard({ item, index = 0 }: { item: CatalogItem; index?: number }) {
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: Math.min(index, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -4 }}
-      className="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-ink-100 bg-white shadow-card transition-shadow hover:shadow-lift"
+    // Animación de entrada en CSS: el contenido es visible aunque el JavaScript todavía no haya cargado.
+    <article
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+      className="group relative flex animate-fade-up flex-col overflow-hidden rounded-[var(--radius-card)] border border-ink-100 bg-white shadow-card transition-[box-shadow,translate] duration-300 hover:-translate-y-1 hover:shadow-lift"
     >
       <Link href={`/producto/${item.slug}`} className="relative block aspect-square overflow-hidden bg-ink-50">
         {item.image_url ? (
@@ -52,7 +49,7 @@ export function ProductCard({ item, index = 0 }: { item: CatalogItem; index?: nu
           product={{ id: item.id, name: item.name, slug: item.slug, sku: item.sku, price: Number(item.final_price), image: item.image_url }}
         />
       </div>
-    </motion.article>
+    </article>
   );
 }
 
