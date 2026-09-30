@@ -141,7 +141,7 @@ src/lib/ai/            asistentes (herramientas, bucle con Claude, ejecución de
 src/lib/payments/      Bancard y simulador
 ```
 
-Los asistentes eligen el proveedor con `AI_PROVIDER`: `nvidia` (API gratuita de NVIDIA, modelo `NVIDIA_MODEL`, por defecto `nvidia/nemotron-3-super-120b-a12b`), `gemini` (`gemini-3.7-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
+Los asistentes eligen el proveedor con `AI_PROVIDER`: `nvidia` (API gratuita de NVIDIA, modelo `NVIDIA_MODEL`, por defecto `nvidia/nemotron-3-super-120b-a12b`), `gemini` (`gemini-3.6-flash` con respaldo automático a `gemini-3.5-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
 
 ---
 

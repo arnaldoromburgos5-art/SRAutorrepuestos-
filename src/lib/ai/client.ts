@@ -25,7 +25,9 @@ export function aiProvider(): AiProvider | null {
 export const isAiConfigured = () => aiProvider() !== null;
 
 const NVIDIA_MODEL = () => process.env.NVIDIA_MODEL || "nvidia/nemotron-3-super-120b-a12b";
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.7-flash";
+const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.6-flash";
+// Modelos gratuitos de respaldo cuando el principal está saturado (503) o sin cuota (429).
+const GEMINI_FALLBACKS = () => [...new Set([GEMINI_MODEL(), ...(process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean)])];
 const ANTHROPIC_MODEL = () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
 
 let anthropicClient: Anthropic | null = null;
@@ -178,15 +180,28 @@ async function runGemini<Ctx>(opts: RunOptions<Ctx>) {
   const functionDeclarations = opts.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.input_schema }));
   let text = "";
 
+  const generate = async (contents: Content[]) => {
+    let lastError: unknown;
+    for (const model of GEMINI_FALLBACKS()) {
+      try {
+        return await gemini().models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}`,
+            tools: [{ functionDeclarations }],
+          },
+        });
+      } catch (e) {
+        lastError = e;
+        if (!(e instanceof ApiError) || ![429, 500, 503].includes(e.status)) throw e;
+      }
+    }
+    throw lastError;
+  };
+
   for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
-    const response = await gemini().models.generateContent({
-      model: GEMINI_MODEL(),
-      contents: [...history, ...appended],
-      config: {
-        systemInstruction: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}`,
-        tools: [{ functionDeclarations }],
-      },
-    });
+    const response = await generate([...history, ...appended]);
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts?.length) {
       text = "Disculpá, no pude responder eso. Si tenés una consulta sobre repuestos o pedidos, contame.";
@@ -293,7 +308,10 @@ export function describeAiError(e: unknown) {
   }
   if (e instanceof ApiError) {
     if (e.status === 429) return "El asistente alcanzó el límite gratuito de consultas por ahora. Probá de nuevo en un minuto.";
-    if (e.status === 400 || e.status === 403) return "El asistente no está configurado correctamente (revisá GEMINI_API_KEY y GEMINI_MODEL).";
+    if (e.status === 503 || e.status === 500) return "Google está con mucha demanda en este momento. Probá de nuevo en unos segundos.";
+    if (e.status === 400 || e.status === 401 || e.status === 403) return "El asistente no está configurado correctamente (revisá GEMINI_API_KEY).";
+    if (e.status === 404) return "El modelo de Gemini configurado ya no está disponible: cambiá GEMINI_MODEL.";
+    console.error("Gemini", e.status, e.message);
     return "El asistente no está disponible en este momento.";
   }
   if (e instanceof Anthropic.RateLimitError) return "El asistente está muy solicitado. Probá de nuevo en un minuto.";
