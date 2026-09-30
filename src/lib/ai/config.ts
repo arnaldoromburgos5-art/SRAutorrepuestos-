@@ -3,13 +3,12 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { createServiceClient } from "@/lib/supabase/admin";
 import { supabaseSecretKey } from "@/lib/env";
 
-export type AiProvider = "nvidia" | "gemini" | "anthropic";
+export type AiProvider = "nvidia" | "gemini";
 export type AiConfig = { provider: AiProvider; apiKey: string; model: string; source: "panel" | "env" };
 
 export const AI_PROVIDERS: Record<AiProvider, { company: string; product: string; url: string; prefix: string; defaultModel: string; free: boolean }> = {
   gemini: { company: "Google", product: "Gemini", url: "https://aistudio.google.com/apikey", prefix: "AIza… o AQ.…", defaultModel: "gemini-3.6-flash", free: true },
   nvidia: { company: "NVIDIA", product: "NIM (build.nvidia.com)", url: "https://build.nvidia.com", prefix: "nvapi-…", defaultModel: "nvidia/nemotron-3-super-120b-a12b", free: true },
-  anthropic: { company: "Anthropic", product: "Claude", url: "https://console.anthropic.com", prefix: "sk-ant-…", defaultModel: "claude-opus-5-5", free: false },
 };
 
 const SECRET_KEY = "ai";
@@ -37,14 +36,12 @@ function fromEnv(): AiConfig | null {
   const keys: Record<AiProvider, string | undefined> = {
     nvidia: process.env.NVIDIA_API_KEY,
     gemini: process.env.GEMINI_API_KEY,
-    anthropic: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
   };
   const models: Record<AiProvider, string | undefined> = {
     nvidia: process.env.NVIDIA_MODEL,
     gemini: process.env.GEMINI_MODEL,
-    anthropic: process.env.ANTHROPIC_MODEL,
   };
-  const provider = explicit && keys[explicit] ? explicit : (["gemini", "nvidia", "anthropic"] as const).find((p) => keys[p]);
+  const provider = explicit && keys[explicit] ? explicit : (["gemini", "nvidia"] as const).find((p) => keys[p]);
   if (!provider) return null;
   return { provider, apiKey: keys[provider]!, model: models[provider] || AI_PROVIDERS[provider].defaultModel, source: "env" };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { friendlyDbError } from "@/lib/utils";
+import { paraguayDay } from "@/lib/periods";
 import { audit, ensure, type ServiceCtx } from "./context";
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ export async function createPromotion(ctx: ServiceCtx, raw: unknown) {
   if (p.scope === "category" && !p.category_id) throw new Error("Elegí la categoría.");
   if (p.scope === "brand" && !p.brand_id) throw new Error("Elegí la marca.");
   if (p.scope === "products" && !p.product_ids.length) throw new Error("Elegí los productos.");
-  const row = { ...p, starts_at: p.starts_at || new Date().toISOString(), ends_at: p.ends_at || null, created_by: ctx.profile.id };
+  const row = { ...p, starts_at: paraguayDay(p.starts_at, "start") ?? new Date().toISOString(), ends_at: paraguayDay(p.ends_at, "end"), created_by: ctx.profile.id };
   const { data, error } = await ctx.supabase.from("promotions").insert(row).select("id").single();
   if (error) throw new Error(friendlyDbError(error.message));
   await audit(ctx, "promotion.create", "promotion", data.id, null, row);
@@ -121,7 +122,7 @@ export async function createCoupon(ctx: ServiceCtx, raw: unknown) {
   ensure(ctx, "promotions.manage");
   const c = couponSchema.parse(raw);
   if (c.type === "percent" && c.value > 90) throw new Error("El porcentaje máximo es 90 %.");
-  const row = { ...c, code: c.code.toUpperCase(), starts_at: c.starts_at || null, ends_at: c.ends_at || null };
+  const row = { ...c, code: c.code.toUpperCase(), starts_at: paraguayDay(c.starts_at, "start"), ends_at: paraguayDay(c.ends_at, "end") };
   const { data, error } = await ctx.supabase.from("coupons").insert(row).select("id").single();
   if (error) throw new Error(friendlyDbError(error.message));
   await audit(ctx, "coupon.create", "coupon", data.id, null, row);

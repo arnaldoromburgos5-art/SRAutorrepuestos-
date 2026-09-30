@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
-import { describeAiError, effort, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { describeAiError, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
 import { getAiConfig } from "@/lib/ai/config";
 import { adminSystemPrompt, adminTools, type AdminCtx } from "@/lib/ai/admin";
 import { parseImportFile, validateImport } from "@/lib/services/imports";
@@ -115,7 +115,6 @@ export async function POST(request: Request) {
       userText: message.data,
       tools: adminTools,
       ctx,
-      effort: effort(process.env.ADMIN_AI_EFFORT, "medium"),
       maxIterations: 10,
     });
     const toStore = result.toStore;

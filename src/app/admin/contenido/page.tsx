@@ -2,12 +2,15 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { staffContext, ensure, audit } from "@/lib/services/context";
+import { paraguayDay } from "@/lib/periods";
 import { friendlyDbError, slugify, type ActionResult } from "@/lib/utils";
-import { deleteRecordAction, toggleRecordAction } from "../actions";
-import { ActionButton, ActionForm } from "@/components/admin/action-form";
-import { Badge, Card, Field, PageHeader, Table, inputCls } from "@/components/admin/ui";
+import { ActionForm } from "@/components/admin/action-form";
+import { BannersManager, CategoriesManager } from "@/components/admin/content-managers";
+import { Card, Field, PageHeader, inputCls } from "@/components/admin/ui";
 
-export const metadata = { title: "Contenido" };
+export const metadata = { title: "Categorías y portada" };
+
+const fail = (e: unknown): ActionResult => ({ ok: false, error: e instanceof z.ZodError ? e.issues[0]?.message ?? "Revisá los datos." : friendlyDbError((e as Error).message) });
 
 async function saveBanner(_: ActionResult | undefined, form: FormData): Promise<ActionResult> {
   "use server";
@@ -16,24 +19,31 @@ async function saveBanner(_: ActionResult | undefined, form: FormData): Promise<
     ensure(ctx, "content.manage");
     const d = z
       .object({
-        title: z.string().trim().min(3).max(120),
+        title: z.string().trim().min(3, "El título es muy corto.").max(120),
         subtitle: z.string().trim().max(240).optional(),
         cta_label: z.string().trim().max(40).optional(),
-        link_url: z.string().trim().max(300).regex(/^\/|^https:\/\//, "Usá una ruta interna (/catalogo) o https://").optional().or(z.literal("")),
+        link_url: z.string().trim().max(300).regex(/^\/|^https:\/\//, "El enlace debe empezar con / (p. ej. /catalogo) o https://").optional().or(z.literal("")),
         placement: z.enum(["hero", "strip"]),
         sort: z.coerce.number().int().default(0),
         starts_at: z.string().optional(),
         ends_at: z.string().optional(),
       })
       .parse(Object.fromEntries(form));
-    const row = { ...d, link_url: d.link_url || null, starts_at: d.starts_at || null, ends_at: d.ends_at || null };
+    const row = {
+      ...d,
+      subtitle: d.subtitle || null,
+      cta_label: d.cta_label || null,
+      link_url: d.link_url || null,
+      starts_at: paraguayDay(d.starts_at, "start"),
+      ends_at: paraguayDay(d.ends_at, "end"),
+    };
     const { error } = await ctx.supabase.from("banners").insert(row);
     if (error) throw new Error(error.message);
     await audit(ctx, "banner.create", "banner", null, null, row);
     revalidatePath("/", "layout");
     return { ok: true, message: "Banner creado." };
   } catch (e) {
-    return { ok: false, error: friendlyDbError((e as Error).message) };
+    return fail(e);
   }
 }
 
@@ -50,105 +60,122 @@ async function savePage(_: ActionResult | undefined, form: FormData): Promise<Ac
     revalidatePath(`/p/${row.slug}`);
     return { ok: true, message: "Página guardada." };
   } catch (e) {
-    return { ok: false, error: friendlyDbError((e as Error).message) };
+    return fail(e);
   }
 }
 
-async function toggleFeatured(id: string, value: boolean) {
+async function createCategory(_: ActionResult | undefined, form: FormData): Promise<ActionResult> {
   "use server";
-  const ctx = await staffContext();
-  ensure(ctx, "content.manage");
-  await ctx.supabase.from("categories").update({ is_featured: value }).eq("id", id);
-  await audit(ctx, "category.featured", "category", id, null, { is_featured: value });
-  revalidatePath("/", "layout");
+  try {
+    const ctx = await staffContext();
+    ensure(ctx, "products.write");
+    const d = z
+      .object({ name: z.string().trim().min(2, "Escribí el nombre.").max(60), parent_id: z.string().uuid().optional().or(z.literal("")), icon: z.string().max(30).optional() })
+      .parse(Object.fromEntries(form));
+    const { data: last } = await ctx.supabase.from("categories").select("sort").order("sort", { ascending: false }).limit(1).maybeSingle();
+    let slug = slugify(d.name);
+    const { data: taken } = await ctx.supabase.from("categories").select("id").eq("slug", slug).maybeSingle();
+    if (taken) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
+    const row = { name: d.name, slug, parent_id: d.parent_id || null, icon: d.icon || null, is_featured: form.get("is_featured") === "on", sort: (last?.sort ?? 0) + 1 };
+    const { error } = await ctx.supabase.from("categories").insert(row);
+    if (error) throw new Error(error.message);
+    await audit(ctx, "category.create", "category", null, null, row);
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Categoría "${d.name}" creada.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+async function deleteCategory(id: string): Promise<ActionResult> {
+  "use server";
+  try {
+    const ctx = await staffContext();
+    ensure(ctx, "products.write");
+    const { data: before } = await ctx.supabase.from("categories").select("name, slug").eq("id", id).single();
+    // Los productos quedan sin categoría y las subcategorías pasan a principales (claves foráneas "set null").
+    const { error } = await ctx.supabase.from("categories").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    await audit(ctx, "category.delete", "category", id, before, null);
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+async function toggleFeatured(id: string, value: boolean): Promise<ActionResult> {
+  "use server";
+  try {
+    const ctx = await staffContext();
+    ensure(ctx, "content.manage");
+    const { error } = await ctx.supabase.from("categories").update({ is_featured: value }).eq("id", id);
+    if (error) throw new Error(error.message);
+    await audit(ctx, "category.featured", "category", id, null, { is_featured: value });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export default async function ContentPage({ searchParams }: { searchParams: Promise<{ pagina?: string }> }) {
   const { pagina } = await searchParams;
   const { supabase } = await requirePermission("content.manage");
-  const [{ data: banners }, { data: pages }, { data: categories }] = await Promise.all([
+  const [{ data: banners }, { data: pages }, { data: categories }, { data: productCats }] = await Promise.all([
     supabase.from("banners").select("*").order("placement").order("sort"),
-    supabase.from("pages").select("*").order("slug"),
-    supabase.from("categories").select("id, name, is_featured").is("parent_id", null).order("sort"),
+    supabase.from("pages").select("*").order("title"),
+    supabase.from("categories").select("id, name, slug, icon, parent_id, is_featured").order("sort").order("name"),
+    supabase.from("products").select("category_id").neq("status", "archived"),
   ]);
+  const counts = new Map<string, number>();
+  for (const p of productCats ?? []) if (p.category_id) counts.set(p.category_id, (counts.get(p.category_id) ?? 0) + 1);
+  const cats = (categories ?? []).map((c) => ({ ...c, products: counts.get(c.id) ?? 0 }));
+  // Una categoría principal cuenta también los productos de sus subcategorías.
+  for (const c of cats) if (!c.parent_id) c.products += cats.filter((s) => s.parent_id === c.id).reduce((n, s) => n + s.products, 0);
   const editing = (pages ?? []).find((p) => p.slug === pagina);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Contenido" description="Banners de la portada, categorías destacadas y páginas informativas." />
+      <PageHeader title="Categorías y portada" description="Categorías de la tienda, banners de la portada y páginas informativas." />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card title="Banners">
-          <Table>
-            <thead><tr><th>Título</th><th>Ubicación</th><th>Estado</th><th /></tr></thead>
-            <tbody>
-              {(banners ?? []).map((b) => (
-                <tr key={b.id}>
-                  <td className="font-medium">{b.title}<span className="block text-xs text-ink-400">{b.link_url}</span></td>
-                  <td className="text-xs">{b.placement === "hero" ? "Portada" : "Franja"} · {b.sort}</td>
-                  <td><Badge tone={b.active ? "ok" : "neutral"}>{b.active ? "Activo" : "Oculto"}</Badge></td>
-                  <td className="whitespace-nowrap text-right">
-                    <ActionButton action={toggleRecordAction.bind(null, "banners", b.id, "active", !b.active)} className="text-xs font-semibold text-accent-600">{b.active ? "Ocultar" : "Mostrar"}</ActionButton>{" "}
-                    <ActionButton action={deleteRecordAction.bind(null, "banners", b.id)} confirm="¿Eliminar el banner?" className="text-xs text-bad-600">Eliminar</ActionButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          <div className="mt-5 border-t border-ink-100 pt-4">
-            <ActionForm action={saveBanner} submitLabel="Agregar banner" resetOnSuccess>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Título" className="sm:col-span-2"><input name="title" required className={inputCls} /></Field>
-                <Field label="Subtítulo" className="sm:col-span-2"><input name="subtitle" className={inputCls} /></Field>
-                <Field label="Texto del botón"><input name="cta_label" className={inputCls} /></Field>
-                <Field label="Enlace"><input name="link_url" placeholder="/catalogo?categoria=frenos" className={inputCls} /></Field>
-                <Field label="Ubicación">
-                  <select name="placement" className={inputCls}><option value="hero">Portada (principal)</option><option value="strip">Franja informativa</option></select>
-                </Field>
-                <Field label="Orden"><input name="sort" type="number" defaultValue={0} className={inputCls} /></Field>
-                <Field label="Desde"><input name="starts_at" type="datetime-local" className={inputCls} /></Field>
-                <Field label="Hasta"><input name="ends_at" type="datetime-local" className={inputCls} /></Field>
-              </div>
-            </ActionForm>
-          </div>
+        <Card title="Categorías">
+          <p className="-mt-2 mb-4 text-sm text-ink-500">Tocá la ⭐ para mostrar una categoría en la portada.</p>
+          <CategoriesManager categories={cats as never} createCategory={createCategory} deleteCategory={deleteCategory} toggleFeatured={toggleFeatured} />
         </Card>
 
-        <div className="space-y-6">
-          <Card title="Categorías destacadas en la portada">
-            <ul className="divide-y divide-ink-100 text-sm">
-              {(categories ?? []).map((c) => (
-                <li key={c.id} className="flex items-center justify-between py-2">
-                  <span>{c.name}</span>
-                  <ActionButton action={toggleFeatured.bind(null, c.id, !c.is_featured)} className={`rounded-full px-3 py-1 text-xs font-semibold ${c.is_featured ? "bg-ok-50 text-ok-600" : "bg-ink-100 text-ink-500"}`}>
-                    {c.is_featured ? "Destacada" : "No destacada"}
-                  </ActionButton>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card title="Páginas informativas">
-            <ul className="mb-4 flex flex-wrap gap-2 text-sm">
-              {(pages ?? []).map((p) => (
-                <li key={p.id}><a href={`/admin/contenido?pagina=${p.slug}`} className={`rounded-full px-3 py-1 ${p.slug === pagina ? "bg-ink-900 text-white" : "bg-ink-100"}`}>{p.title}</a></li>
-              ))}
-              <li><a href="/admin/contenido?pagina=nueva" className="rounded-full px-3 py-1 font-semibold text-accent-600">+ Nueva</a></li>
-            </ul>
-            <ActionForm key={pagina ?? "none"} action={savePage} submitLabel="Guardar página">
-              <div className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Dirección (/p/…)"><input name="slug" required defaultValue={editing?.slug ?? ""} className={inputCls} /></Field>
-                  <Field label="Título"><input name="title" required defaultValue={editing?.title ?? ""} className={inputCls} /></Field>
-                </div>
-                <Field label="Contenido" hint="Formato simple: ## Título, párrafos separados por una línea en blanco, listas con “- ” y **negrita**.">
-                  <textarea name="body" rows={10} defaultValue={editing?.body ?? ""} className="w-full rounded-lg border border-ink-200 p-3 font-mono text-xs" />
-                </Field>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="published" defaultChecked={editing?.published ?? true} className="accent-accent-500" /> Publicada</label>
-              </div>
-            </ActionForm>
-          </Card>
-        </div>
+        <Card title="Banners de la portada">
+          <BannersManager banners={(banners ?? []) as never} saveBanner={saveBanner} />
+        </Card>
       </div>
+
+      <Card title="Páginas informativas">
+        <div className="mb-4 flex flex-wrap gap-2 text-sm">
+          {(pages ?? []).map((p) => (
+            <a key={p.id} href={`/admin/contenido?pagina=${p.slug}`} className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${p.slug === pagina ? "bg-ink-900 text-white" : "bg-ink-100 text-ink-700 hover:bg-ink-200"}`}>
+              {p.title}
+            </a>
+          ))}
+          <a href="/admin/contenido?pagina=nueva" className="rounded-full px-3.5 py-1.5 font-semibold text-accent-600 hover:bg-accent-50">+ Nueva página</a>
+        </div>
+        {pagina ? (
+          <ActionForm key={pagina} action={savePage} submitLabel="Guardar página">
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Título"><input name="title" required defaultValue={editing?.title ?? ""} className={inputCls} /></Field>
+                <Field label="Dirección" hint="Se verá en tutienda.com/p/…"><input name="slug" required defaultValue={editing?.slug ?? ""} placeholder="envios" className={inputCls} /></Field>
+              </div>
+              <Field label="Contenido" hint="Separá los párrafos con una línea en blanco. Para un subtítulo empezá la línea con ## y para una lista con - ">
+                <textarea name="body" rows={10} defaultValue={editing?.body ?? ""} className="w-full rounded-lg border border-ink-200 p-3 text-sm leading-relaxed" />
+              </Field>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="published" defaultChecked={editing?.published ?? true} className="accent-accent-500" /> Visible en la tienda</label>
+            </div>
+          </ActionForm>
+        ) : (
+          <p className="text-sm text-ink-500">Elegí una página para editarla o creá una nueva.</p>
+        )}
+      </Card>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { testAiConnection } from "@/lib/ai/client";
 import type { ActionResult } from "@/lib/utils";
 
 const schema = z.object({
-  provider: z.enum(["gemini", "nvidia", "anthropic"]),
+  provider: z.enum(["gemini", "nvidia"]),
   apiKey: z.string().trim().max(400).optional(),
   model: z.string().trim().max(120).optional(),
 });

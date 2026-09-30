@@ -7,7 +7,7 @@ import type { ActionResult } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { btnGhost, btnPrimary, inputCls } from "./ui";
 
-type Provider = "gemini" | "nvidia" | "anthropic";
+type Provider = "gemini" | "nvidia";
 type Info = { company: string; product: string; url: string; prefix: string; defaultModel: string; free: boolean };
 
 function Msg({ state }: { state: ActionResult | null | undefined }) {
@@ -51,7 +51,7 @@ export function AiSettingsForm({
 
       <div>
         <p className="mb-2 text-sm font-semibold">1. Elegí la empresa de tu clave (sólo estas son válidas)</p>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {(Object.keys(providers) as Provider[]).map((p) => (
             <button
               key={p}

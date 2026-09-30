@@ -1,15 +1,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { formatPyg } from "@/lib/money";
 import { staffContext, ensure, audit } from "@/lib/services/context";
 import { friendlyDbError, type ActionResult } from "@/lib/utils";
 import { PY_DEPARTMENTS } from "@/lib/types";
-import { deleteRecordAction, toggleRecordAction } from "../actions";
-import { ActionButton, ActionForm } from "@/components/admin/action-form";
+import { ActionForm } from "@/components/admin/action-form";
 import { AiSettingsForm } from "@/components/admin/ai-settings";
+import { ShippingZones } from "@/components/admin/shipping-zones";
 import { AI_PROVIDERS, aiStatus } from "@/lib/ai/config";
-import { Badge, Card, Field, PageHeader, Table, inputCls } from "@/components/admin/ui";
+import { Card, Field, PageHeader, inputCls } from "@/components/admin/ui";
 
 export const metadata = { title: "Datos del negocio" };
 
@@ -76,7 +75,7 @@ async function addZone(_: ActionResult | undefined, form: FormData): Promise<Act
     if (error) throw new Error(error.message);
     await audit(ctx, "shipping_zone.create", "shipping_zone", null, null, row);
     revalidatePath("/admin/configuracion");
-    return { ok: true, message: "Zona creada." };
+    return { ok: true, message: "Zona de envío agregada." };
   } catch (e) {
     return { ok: false, error: friendlyDbError((e as Error).message) };
   }
@@ -129,41 +128,8 @@ export default async function SettingsPage() {
       </div>
 
       <Card title="Zonas de envío">
-        <Table>
-          <thead><tr><th>Zona</th><th>Método</th><th>Departamentos</th><th className="text-right">Costo</th><th className="text-right">Gratis desde</th><th>Estado</th><th /></tr></thead>
-          <tbody>
-            {(zones ?? []).map((z) => (
-              <tr key={z.id}>
-                <td className="font-medium">{z.name}<span className="block text-xs text-ink-400">{z.eta}</span></td>
-                <td>{z.method === "home" ? "Domicilio" : "Agencia"}</td>
-                <td className="max-w-xs text-xs">{z.departments.join(", ")}</td>
-                <td className="text-right">{formatPyg(z.cost)}</td>
-                <td className="text-right">{z.free_over ? formatPyg(z.free_over) : "—"}</td>
-                <td><Badge tone={z.active ? "ok" : "neutral"}>{z.active ? "Activa" : "Inactiva"}</Badge></td>
-                <td className="whitespace-nowrap text-right">
-                  <ActionButton action={toggleRecordAction.bind(null, "shipping_zones", z.id, "active", !z.active)} className="text-xs font-semibold text-accent-600">{z.active ? "Desactivar" : "Activar"}</ActionButton>{" "}
-                  <ActionButton action={deleteRecordAction.bind(null, "shipping_zones", z.id)} confirm="¿Eliminar la zona?" className="text-xs text-bad-600">Eliminar</ActionButton>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        <div className="mt-5 border-t border-ink-100 pt-4">
-          <ActionForm action={addZone} submitLabel="Agregar zona" resetOnSuccess>
-            <div className="grid gap-3 sm:grid-cols-5">
-              <Field label="Nombre"><input name="name" required className={inputCls} /></Field>
-              <Field label="Método"><select name="method" className={inputCls}><option value="home">Domicilio</option><option value="agency">Agencia</option></select></Field>
-              <Field label="Costo (Gs.)"><input name="cost" type="number" min={0} required className={inputCls} /></Field>
-              <Field label="Gratis desde (Gs.)"><input name="free_over" type="number" min={0} className={inputCls} /></Field>
-              <Field label="Plazo"><input name="eta" placeholder="24 a 48 h" className={inputCls} /></Field>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-              {PY_DEPARTMENTS.map((d) => (
-                <label key={d} className="flex items-center gap-1.5 text-sm"><input type="checkbox" name="departments" value={d} className="accent-accent-500" /> {d}</label>
-              ))}
-            </div>
-          </ActionForm>
-        </div>
+        <p className="-mt-2 mb-4 text-sm text-ink-500">El retiro en el local siempre está disponible y sin costo. Acá configurás cuánto cobrás por llevar el pedido.</p>
+        <ShippingZones zones={(zones ?? []) as never} departments={PY_DEPARTMENTS} addZone={addZone} />
       </Card>
 
       <Card title="Políticas (tienda y chatbot)">

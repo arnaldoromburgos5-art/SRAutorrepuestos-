@@ -12,7 +12,6 @@
     "db:bundle": "node scripts/bundle-sql.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.129.0",
     "@google/genai": "^2.24.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",

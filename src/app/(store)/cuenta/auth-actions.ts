@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/admin";
 import { siteUrl } from "@/lib/env";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
@@ -37,18 +38,21 @@ export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {
     .safeParse(Object.fromEntries(form));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   if (!(await rateLimit(`signup:${await clientIp()}`, 5, 3600))) return { error: "Demasiados intentos. Probá más tarde." };
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
+  // La cuenta se crea ya confirmada: la persona entra directo, sin verificar el correo.
+  const { error } = await createServiceClient().auth.admin.createUser({
     email: parsed.data.email,
     password: parsed.data.password,
-    options: {
-      data: { full_name: parsed.data.full_name, phone: parsed.data.phone },
-      emailRedirectTo: `${siteUrl()}/auth/confirm?next=/cuenta`,
-    },
+    email_confirm: true,
+    user_metadata: { full_name: parsed.data.full_name, phone: parsed.data.phone },
   });
-  if (error) return { error: error.message.includes("registered") ? "Ya existe una cuenta con ese correo." : "No pudimos crear la cuenta." };
-  if (data.session) redirect("/cuenta");
-  return { message: "Te enviamos un correo para confirmar tu cuenta." };
+  if (error) {
+    const exists = /registered|already|exists/i.test(error.message);
+    return { error: exists ? "Ya existe una cuenta con ese correo. Ingresá o recuperá tu contraseña." : "No pudimos crear la cuenta. Probá de nuevo." };
+  }
+  const supabase = await createClient();
+  const { error: loginError } = await supabase.auth.signInWithPassword({ email: parsed.data.email, password: parsed.data.password });
+  if (loginError) return { message: "Cuenta creada. Ya podés ingresar con tu correo y contraseña." };
+  redirect(safeNext(form.get("next")));
 }
 
 export async function requestPasswordReset(_: AuthState, form: FormData): Promise<AuthState> {

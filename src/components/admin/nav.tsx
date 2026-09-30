@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   BarChart3, Bot, Boxes, Car, ClipboardList, FileSpreadsheet, Home, Megaphone, Menu, Package, Settings,
-  ShieldCheck, Store, Tag, Truck, UserCog, Users, X, type LucideIcon,
+  Store, Tag, Truck, UserCog, Users, X, type LucideIcon,
 } from "lucide-react";
 import { can, ROLE_LABELS, type Permission, type Role } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -44,10 +44,9 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Mi tienda",
     items: [
-      { href: "/admin/contenido", label: "Portada y páginas", icon: Megaphone, perm: "content.manage" },
+      { href: "/admin/contenido", label: "Categorías y portada", icon: Megaphone, perm: "content.manage" },
       { href: "/admin/configuracion", label: "Datos del negocio", icon: Settings, perm: "settings.manage" },
       { href: "/admin/usuarios", label: "Usuarios", icon: UserCog, perm: "users.manage" },
-      { href: "/admin/auditoria", label: "Historial de cambios", icon: ShieldCheck, perm: "audit.read" },
     ],
   },
 ];

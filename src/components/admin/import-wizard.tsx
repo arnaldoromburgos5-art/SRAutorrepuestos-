@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Upload, XCircle } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { AlertTriangle, CheckCircle2, FileCheck2, Loader2, ScanSearch, Upload, XCircle } from "lucide-react";
 import { applyImportAction, validateImportAction } from "@/app/admin/actions";
 import type { ValidatedRow } from "@/lib/services/imports";
 import { Badge, Card, Table, btnDark, btnPrimary } from "./ui";
@@ -12,13 +12,18 @@ export function ImportWizard() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ created: number; updated: number; skipped: number; stockAdjusted: number; errors: string[] } | null>(null);
   const [pending, start] = useTransition();
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const valid = rows?.filter((r) => !r.errors.length) ?? [];
   const invalid = rows?.filter((r) => r.errors.length) ?? [];
 
   return (
-    <Card title="1. Subí el archivo">
+    <Card title="Subí tu archivo">
       <form
+        ref={formRef}
         action={(form) =>
           start(async () => {
             setError(null);
@@ -29,12 +34,53 @@ export function ImportWizard() {
             setRaw(res.data!.raw);
           })
         }
-        className="flex flex-wrap items-center gap-3"
+        className="space-y-3"
       >
-        <input name="file" type="file" accept=".csv,.xlsx" required className="text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-100 file:px-3 file:py-2 file:font-semibold" />
-        <button disabled={pending} className={btnDark}>
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />} Validar archivo
-        </button>
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files[0];
+            if (!f || !fileRef.current) return;
+            const dt = new DataTransfer();
+            dt.items.add(f);
+            fileRef.current.files = dt.files;
+            setFileName(f.name);
+          }}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
+            dragging ? "border-accent-500 bg-accent-50" : fileName ? "border-ok-600/50 bg-ok-50" : "border-ink-200 hover:border-accent-500 hover:bg-accent-50/40"
+          }`}
+        >
+          <span className={`grid size-14 place-items-center rounded-2xl ${fileName ? "bg-ok-600" : "bg-ink-900"} text-white`}>
+            {fileName ? <FileCheck2 className="size-7" /> : <Upload className="size-7" />}
+          </span>
+          {fileName ? (
+            <>
+              <span className="font-semibold">{fileName}</span>
+              <span className="text-sm text-ink-500">Tocá para elegir otro archivo</span>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Arrastrá tu archivo acá o tocá para elegirlo</span>
+              <span className="text-sm text-ink-500">Excel (.xlsx) o CSV, hasta 5 MB</span>
+            </>
+          )}
+          <input
+            ref={fileRef}
+            name="file"
+            type="file"
+            accept=".csv,.xlsx"
+            className="sr-only"
+            onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+          />
+        </label>
+        <div className="flex justify-end">
+          <button disabled={pending || !fileName} className={btnDark}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />} Revisar archivo
+          </button>
+        </div>
       </form>
       {error ? <p className="mt-3 text-sm text-bad-600">{error}</p> : null}
 

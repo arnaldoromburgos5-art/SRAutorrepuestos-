@@ -1,8 +1,8 @@
 # SR Autorrepuestos
 
-Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (NVIDIA, Google Gemini o Anthropic Claude): uno comercial para compradores y otro interno para administradores.
+Tienda online de repuestos automotrices para Paraguay, con panel administrativo y dos asistentes de IA (Google Gemini o NVIDIA): uno comercial para compradores y otro interno para administradores.
 
-- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · IA: NVIDIA, Gemini o Claude · Vercel.
+- **Stack:** Next.js 16 (App Router, TypeScript, Tailwind v4) · Supabase (PostgreSQL, Auth, Storage) · IA: Google Gemini o NVIDIA · Vercel.
 - **Moneda:** guaraníes (PYG, IVA incluido). Reales y dólares se muestran como referencia.
 - **Pagos:** tarjetas mediante Bancard vPOS, con un simulador para desarrollo.
 - **Entregas:** retiro en el local, envío a domicilio (Asunción y Central) y envío por agencia al interior.
@@ -47,7 +47,7 @@ Requisitos: Node.js 20.9 o superior y una cuenta gratuita en [Supabase](https://
 4. **Variables de entorno.** Copiá `.env.example` como `.env.local` y completá:
    - `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` (en *Project Settings → API*).
    - `SUPABASE_SERVICE_ROLE_KEY` (sólo servidor; nunca la expongas).
-   - `NVIDIA_API_KEY` para los asistentes: es gratis en [build.nvidia.com](https://build.nvidia.com) (usa `nvidia/nemotron-3-super-120b-a12b`). Alternativas: `GEMINI_API_KEY`, gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey). También podés usar Claude con `AI_PROVIDER=anthropic` y `ANTHROPIC_API_KEY`.
+   - Clave de IA para los asistentes: se carga desde **Panel → Datos del negocio → Asistente de IA** (Google Gemini, gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey), o NVIDIA, en [build.nvidia.com](https://build.nvidia.com)). También se puede definir con `GEMINI_API_KEY` o `NVIDIA_API_KEY`.
    - `PAYMENT_PROVIDER=mock` para probar compras sin cobro real.
 5. **Iniciar**
    ```bash
@@ -100,7 +100,7 @@ Cómo se procesa un pago:
 - Las políticas RLS de Supabase son la autoridad final. Cada comprador ve sólo sus datos; los borradores no son públicos.
 - Las operaciones críticas se ejecutan en funciones de base de datos transaccionales: `create_order`, `confirm_payment`, `adjust_stock`, `cancel_order`, `register_return` y `set_order_status`.
 - Los pedidos guardan una copia del nombre, precio y costo de cada producto al momento de la compra.
-- Las claves privadas (service role, Claude, Bancard) sólo existen en el servidor.
+- Las claves privadas (service role, IA, Bancard) sólo existen en el servidor. La clave de IA cargada desde el panel se guarda cifrada en una tabla sin acceso público (`app_secrets`).
 - Los chatbots tienen límite de uso por IP, sesión y usuario. El contenido de productos, archivos y mensajes se trata como datos, nunca como instrucciones.
 - El asistente administrativo usa la sesión del usuario, así que nunca supera sus permisos. Además, vuelve a verificarlos al confirmar cada acción.
 
@@ -137,11 +137,11 @@ src/app/(store)/       tienda
 src/app/admin/         panel administrativo
 src/app/api/           checkout, pagos, chat, asistente, exportación, eventos, cron
 src/lib/services/      operaciones compartidas entre el panel y el asistente
-src/lib/ai/            asistentes (herramientas, bucle con Claude, ejecución de acciones)
+src/lib/ai/            asistentes (herramientas, bucle con Gemini/NVIDIA, ejecución de acciones)
 src/lib/payments/      Bancard y simulador
 ```
 
-Los asistentes eligen el proveedor con `AI_PROVIDER`: `nvidia` (API gratuita de NVIDIA, modelo `NVIDIA_MODEL`, por defecto `nvidia/nemotron-3-super-120b-a12b`), `gemini` (`gemini-3.6-flash` con respaldo automático a `gemini-3.5-flash`, capa gratuita) cuando hay `GEMINI_API_KEY`; el modelo se cambia con `GEMINI_MODEL`. Con `AI_PROVIDER=anthropic` usan Claude (`claude-opus-5-5` por defecto, `ANTHROPIC_MODEL`). Las herramientas, permisos y confirmaciones son las mismas con ambos proveedores. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites bajos de consultas por minuto y por día: para producción conviene un plan pago.
+Los asistentes usan la clave cargada en **Panel → Datos del negocio → Asistente de IA** (o, si no hay, `AI_PROVIDER` con `GEMINI_API_KEY` / `NVIDIA_API_KEY`). Proveedores válidos: **Google Gemini** (`gemini-3.6-flash`, con respaldo automático a `gemini-3.5-flash` ante alta demanda) y **NVIDIA** (`nvidia/nemotron-3-super-120b-a12b`). Las herramientas, permisos y confirmaciones son las mismas con ambos. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites de consultas: para producción conviene activar la facturación.
 
 ---
 

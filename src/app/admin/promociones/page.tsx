@@ -3,6 +3,7 @@ import { formatPyg } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 import { createCouponAction, createPromotionAction, deleteRecordAction, toggleRecordAction } from "../actions";
 import { ActionButton, ActionForm } from "@/components/admin/action-form";
+import { DatePicker } from "@/components/admin/date-picker";
 import { Badge, Card, Field, PageHeader, Table, inputCls } from "@/components/admin/ui";
 
 export const metadata = { title: "Promociones" };
@@ -51,8 +52,8 @@ export default async function PromotionsPage() {
                 </select>
               </Field>
               <div />
-              <Field label="Desde"><input name="starts_at" type="datetime-local" className={inputCls} /></Field>
-              <Field label="Hasta"><input name="ends_at" type="datetime-local" className={inputCls} /></Field>
+              <DatePicker name="starts_at" label="Desde" placeholder="Desde hoy" presets="start" />
+              <DatePicker name="ends_at" label="Hasta" placeholder="Sin vencimiento" />
             </div>
           </ActionForm>
         </Card>
@@ -78,8 +79,8 @@ export default async function PromotionsPage() {
               </Field>
               <Field label="Usos totales"><input name="usage_limit" type="number" min={1} className={inputCls} /></Field>
               <Field label="Usos por cliente"><input name="per_customer_limit" type="number" min={1} className={inputCls} /></Field>
-              <Field label="Desde"><input name="starts_at" type="datetime-local" className={inputCls} /></Field>
-              <Field label="Hasta"><input name="ends_at" type="datetime-local" className={inputCls} /></Field>
+              <DatePicker name="starts_at" label="Desde" placeholder="Desde hoy" presets="start" />
+              <DatePicker name="ends_at" label="Hasta" placeholder="Sin vencimiento" />
               <Field label="Descripción (se muestra al aplicarlo)" className="sm:col-span-2"><input name="description" className={inputCls} /></Field>
             </div>
           </ActionForm>

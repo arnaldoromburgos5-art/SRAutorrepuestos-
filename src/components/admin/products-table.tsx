@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { formatPyg } from "@/lib/money";
 import { bulkPriceAction, setStatusAction } from "@/app/admin/actions";
-import { Badge, Table, btnGhost } from "./ui";
+import { Badge, Table } from "./ui";
 
 type Row = {
   id: string; sku: string; name: string; status: "draft" | "published" | "archived"; brand_name: string | null; category_name: string | null;
@@ -124,9 +124,6 @@ export function ProductsTable({ rows, canPublish, canWrite, canPrice }: { rows: 
         </tbody>
       </Table>
       {!rows.length ? <p className="text-center text-sm text-ink-500">No hay productos con esos filtros.</p> : null}
-      <p className="text-xs text-ink-400">
-        Los cambios de estado y precio quedan registrados en la auditoría. <Link href="/admin/auditoria" className={btnGhost + " h-auto border-0 p-0 text-xs"}>Ver auditoría</Link>
-      </p>
     </div>
   );
 }

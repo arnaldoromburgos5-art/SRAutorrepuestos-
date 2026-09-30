@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getVehicleSelection } from "@/lib/catalog";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/admin";
-import { describeAiError, effort, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
+import { describeAiError, historyMatchesProvider, runAssistant, type StoredMessage } from "@/lib/ai/client";
 import { getAiConfig } from "@/lib/ai/config";
 import { SHOPPER_SYSTEM, shopperTools, type ShopperCtx } from "@/lib/ai/shopper";
 
@@ -82,7 +82,6 @@ export async function POST(request: Request) {
       userText: message,
       tools: shopperTools,
       ctx,
-      effort: effort(process.env.SHOPPER_AI_EFFORT, "low"),
       maxIterations: 8,
     });
     const toStore = result.toStore;

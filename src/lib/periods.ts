@@ -25,6 +25,13 @@ export function periodRange(key: string | undefined): { key: PeriodKey; from: Da
   return { key: k, from: new Date(now.getTime() - 30 * day), to };
 }
 
+/** "AAAA-MM-DD" → inicio (00:00) o fin (23:59:59) de ese día en hora de Paraguay (UTC-3), en ISO. */
+export function paraguayDay(value: string | null | undefined, edge: "start" | "end"): string | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(value).toISOString();
+  return new Date(`${value}T${edge === "start" ? "00:00:00" : "23:59:59"}-03:00`).toISOString();
+}
+
 /** Período inmediatamente anterior de igual duración (para comparar). */
 export function previousRange(from: Date, to: Date) {
   const span = to.getTime() - from.getTime();
