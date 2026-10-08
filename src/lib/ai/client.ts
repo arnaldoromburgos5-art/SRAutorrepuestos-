@@ -12,7 +12,7 @@ export type { AiConfig, AiProvider } from "./config";
 
 // Modelos gratuitos de respaldo de Gemini cuando el principal está saturado (503), sin cuota (429)
 // o no responde: con mucha demanda Google a veces deja la solicitud colgada en lugar de devolver 503.
-const GEMINI_RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+const GEMINI_RETRYABLE = new Set([404, 408, 429, 500, 502, 503, 504]); // 404: modelo retirado → probar el de respaldo
 const GEMINI_COOLDOWN_MS = 5 * 60_000;
 const geminiCooldown = new Map<string, number>(); // modelo → hasta cuándo se saltea
 
@@ -254,8 +254,9 @@ export function describeAiError(e: unknown) {
   if (e instanceof ApiError) {
     if (e.status === 429) return "El asistente alcanzó el límite gratuito de consultas por ahora. Probá de nuevo en un minuto.";
     if (e.status === 503 || e.status === 500) return "Google está con mucha demanda en este momento. Probá de nuevo en unos segundos.";
-    if (e.status === 400 || e.status === 401 || e.status === 403) return "El asistente no está configurado correctamente (revisá GEMINI_API_KEY).";
-    if (e.status === 404) return "El modelo de Gemini configurado ya no está disponible: cambiá GEMINI_MODEL.";
+    if (e.status === 400 && /api key/i.test(e.message)) return "Google rechazó la clave de API. Revisala en Panel → Datos del negocio → Asistente de IA (empieza con AIza… o AQ.…).";
+    if (e.status === 400 || e.status === 401 || e.status === 403) return "Google rechazó la consulta: revisá la clave en Panel → Datos del negocio → Asistente de IA.";
+    if (e.status === 404) return "El modelo de Gemini configurado no existe: dejá vacío el campo Modelo en Panel → Datos del negocio → Asistente de IA.";
     console.error("Gemini", e.status, e.message);
     return "El asistente no está disponible en este momento.";
   }

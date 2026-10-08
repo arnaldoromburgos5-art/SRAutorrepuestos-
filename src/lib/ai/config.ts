@@ -13,6 +13,35 @@ export const AI_PROVIDERS: Record<AiProvider, { company: string; product: string
 
 const SECRET_KEY = "ai";
 
+/** El modelo tiene que ser de la misma empresa que la clave (p. ej. no guardar un modelo de NVIDIA con una clave de Google). */
+export function modelMatchesProvider(provider: AiProvider, model: string) {
+  return provider === "gemini" ? /^(models\/)?gemini-/i.test(model) : model.includes("/");
+}
+
+/** Detecta errores comunes al pegar la clave antes de guardarla o probarla. */
+export function checkAiInput(provider: AiProvider, apiKey: string | undefined, model: string | undefined) {
+  const key = apiKey?.trim();
+  if (key && provider === "gemini") {
+    if (/^gen-lang-client-/i.test(key)) {
+      return "Eso es el nombre del proyecto de Google, no la clave. En aistudio.google.com/apikey tocá “Copiar” en la columna de la clave (empieza con AIza… o AQ.…).";
+    }
+    if (/^nvapi-/i.test(key)) return "Esa clave es de NVIDIA: elegí NVIDIA arriba.";
+    if (!/^(AIza[\w-]{30,}|AQ\.[\w.-]{20,})$/.test(key)) return "Esa no parece una clave de Google Gemini: tiene que empezar con AIza… o AQ.…";
+  }
+  if (key && provider === "nvidia") {
+    if (/^(AIza|AQ\.)/.test(key)) return "Esa clave es de Google: elegí Google arriba.";
+    if (!/^nvapi-[\w-]{20,}$/.test(key)) return "Esa no parece una clave de NVIDIA: tiene que empezar con nvapi-…";
+  }
+  if (model && !modelMatchesProvider(provider, model.trim())) {
+    return `El modelo “${model.trim()}” no es de ${AI_PROVIDERS[provider].company}. Dejá el campo Modelo vacío para usar ${AI_PROVIDERS[provider].defaultModel}.`;
+  }
+  return null;
+}
+
+// Un modelo guardado que no corresponde a la empresa se ignora y se usa el recomendado.
+const pickModel = (provider: AiProvider, model: string | undefined) =>
+  model && modelMatchesProvider(provider, model) ? model : AI_PROVIDERS[provider].defaultModel;
+
 // Cifrado AES-256-GCM con una clave derivada de la clave secreta del servidor.
 function cipherKey() {
   return createHash("sha256").update(`sr-autorrepuestos:ai:${process.env.APP_ENCRYPTION_KEY || supabaseSecretKey()}`).digest();
@@ -43,7 +72,7 @@ function fromEnv(): AiConfig | null {
   };
   const provider = explicit && keys[explicit] ? explicit : (["gemini", "nvidia"] as const).find((p) => keys[p]);
   if (!provider) return null;
-  return { provider, apiKey: keys[provider]!, model: models[provider] || AI_PROVIDERS[provider].defaultModel, source: "env" };
+  return { provider, apiKey: keys[provider]!, model: pickModel(provider, models[provider]), source: "env" };
 }
 
 let cache: { at: number; value: AiConfig | null } | null = null;
@@ -57,7 +86,7 @@ export async function getAiConfig(): Promise<AiConfig | null> {
     if (data?.value) {
       const parsed = JSON.parse(decrypt(data.value)) as { provider: AiProvider; apiKey: string; model?: string };
       if (parsed.apiKey && parsed.provider in AI_PROVIDERS) {
-        value = { provider: parsed.provider, apiKey: parsed.apiKey, model: parsed.model || AI_PROVIDERS[parsed.provider].defaultModel, source: "panel" };
+        value = { provider: parsed.provider, apiKey: parsed.apiKey, model: pickModel(parsed.provider, parsed.model), source: "panel" };
       }
     }
   } catch (e) {
@@ -88,6 +117,8 @@ export async function storeAiConfig(input: { provider: AiProvider; apiKey?: stri
     if (current?.source === "panel" && current.provider === input.provider) apiKey = current.apiKey;
   }
   if (!apiKey) throw new Error("Pegá la clave de API.");
+  const problem = checkAiInput(input.provider, input.apiKey, input.model);
+  if (problem) throw new Error(problem);
   const value = encrypt(JSON.stringify({ provider: input.provider, apiKey, model: input.model?.trim() || undefined }));
   const { error } = await db.from("app_secrets").upsert({ key: SECRET_KEY, value, updated_by: userId, updated_at: new Date().toISOString() });
   if (error) {

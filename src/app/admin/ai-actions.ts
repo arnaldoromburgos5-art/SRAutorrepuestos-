@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { audit, ensure, staffContext } from "@/lib/services/context";
-import { AI_PROVIDERS, deleteAiConfig, getAiConfig, storeAiConfig, type AiConfig } from "@/lib/ai/config";
+import { AI_PROVIDERS, checkAiInput, deleteAiConfig, getAiConfig, storeAiConfig, type AiConfig } from "@/lib/ai/config";
 import { testAiConnection } from "@/lib/ai/client";
 import type { ActionResult } from "@/lib/utils";
 
@@ -38,6 +38,8 @@ export async function testAiSettingsAction(form: FormData): Promise<ActionResult
     const ctx = await staffContext();
     ensure(ctx, "settings.manage");
     const input = parse(form);
+    const problem = checkAiInput(input.provider, input.apiKey, input.model);
+    if (problem) return { ok: false, error: problem };
     let ai: AiConfig | null = null;
     if (input.apiKey) {
       ai = { provider: input.provider, apiKey: input.apiKey, model: input.model || AI_PROVIDERS[input.provider].defaultModel, source: "panel" };

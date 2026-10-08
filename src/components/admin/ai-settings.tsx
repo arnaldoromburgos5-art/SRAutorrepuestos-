@@ -97,7 +97,8 @@ export function AiSettingsForm({
           <summary className="cursor-pointer text-ink-500">Opciones avanzadas (modelo)</summary>
           <label className="mt-2 block space-y-1.5">
             <span className="text-xs font-semibold text-ink-600">Modelo</span>
-            <input name="model" defaultValue={sameAsSaved ? status?.model : ""} placeholder={info.defaultModel} className={inputCls} />
+            {/* key: al cambiar de empresa el campo se vacía, para no mezclar un modelo de NVIDIA con una clave de Google. */}
+            <input key={provider} name="model" defaultValue={sameAsSaved && status?.model !== info.defaultModel ? status?.model : ""} placeholder={info.defaultModel} className={inputCls} />
             <span className="text-xs text-ink-400">Dejalo vacío para usar el recomendado: {info.defaultModel}</span>
           </label>
         </details>
