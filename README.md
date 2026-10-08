@@ -42,7 +42,7 @@ Requisitos: Node.js 20.9 o superior y una cuenta gratuita en [Supabase](https://
    npm install
    ```
 2. **Crear el proyecto en Supabase** (región sugerida: *South America – São Paulo*).
-3. **Crear la base de datos.** En Supabase abrí *SQL Editor → New query*, pegá el contenido de `supabase/setup-completo.sql` y presioná *Run*. Ese archivo incluye las migraciones y los datos base (categorías, marcas, vehículos, zonas de envío y páginas), sin productos. Si querés una tienda de ejemplo, ejecutá además `supabase/demo.sql`.
+3. **Crear la base de datos.** En Supabase abrí *SQL Editor → New query*, pegá el contenido de `supabase/setup-completo.sql` y presioná *Run*. Ese archivo incluye las migraciones y los datos base (categorías, marcas, vehículos, zonas de envío y páginas), sin productos. Si querés una tienda de ejemplo, ejecutá además `supabase/demo.sql`, o cargá el catálogo inicial con fotos reales usando `npm run db:catalogo` (ver más abajo).
    - Si usás la Supabase CLI, podés aplicar `supabase/migrations/*`, luego `supabase/seed.sql` y, opcionalmente, `supabase/demo.sql`.
 4. **Variables de entorno.** Copiá `.env.example` como `.env.local` y completá:
    - `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` (en *Project Settings → API*).
@@ -125,6 +125,7 @@ npm run lint         # ESLint
 npm run typecheck    # TypeScript
 npm run test:db      # prueba migraciones, pedidos, pagos y permisos en Postgres embebido (PGlite)
 npm run db:bundle    # regenera supabase/setup-completo.sql después de cambiar migraciones o seed
+npm run db:catalogo  # carga 15 vehículos, 3 proveedores y 60 productos con fotos reales (solo en una base sin productos)
 ```
 
 Estructura principal:
@@ -133,6 +134,7 @@ Estructura principal:
 supabase/migrations/   esquema, funciones y políticas RLS
 supabase/seed.sql      datos base (configuración, categorías, marcas, vehículos, envíos)
 supabase/demo.sql      productos y ventas de demostración (opcional, ilustrativos)
+supabase/catalogo-fotos.json  fotos del catálogo inicial (Unsplash / Wikimedia Commons, con licencia y autor)
 src/app/(store)/       tienda
 src/app/admin/         panel administrativo
 src/app/api/           checkout, pagos, chat, asistente, exportación, eventos, cron
@@ -148,6 +150,7 @@ Los asistentes usan la clave cargada en **Panel → Datos del negocio → Asiste
 ## 7. Pendiente antes del lanzamiento
 
 - [ ] Cargar el catálogo real con fotos (si se usó `demo.sql`, borrar antes sus productos de ejemplo).
+- [ ] Revisar precios, stock y compatibilidades del catálogo inicial (`db:catalogo`): son estimados y quedan como "pendiente de verificar".
 - [ ] Definir el origen de los datos de compatibilidad: catálogo del proveedor o base técnica.
 - [ ] Completar razón social, RUC, teléfono y dirección en *Configuración*.
 - [ ] Certificar Bancard y probar pagos aprobados, rechazados y duplicados en staging.
