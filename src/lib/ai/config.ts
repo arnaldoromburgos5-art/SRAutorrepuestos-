@@ -7,7 +7,7 @@ export type AiProvider = "nvidia" | "gemini";
 export type AiConfig = { provider: AiProvider; apiKey: string; model: string; source: "panel" | "env" };
 
 export const AI_PROVIDERS: Record<AiProvider, { company: string; product: string; url: string; prefix: string; defaultModel: string; free: boolean }> = {
-  gemini: { company: "Google", product: "Gemini", url: "https://aistudio.google.com/apikey", prefix: "AIza… o AQ.…", defaultModel: "gemini-3.6-flash", free: true },
+  gemini: { company: "Google", product: "Gemini", url: "https://aistudio.google.com/apikey", prefix: "AIza… o AQ.…", defaultModel: "gemini-3.5-flash", free: true },
   nvidia: { company: "NVIDIA", product: "NIM (build.nvidia.com)", url: "https://build.nvidia.com", prefix: "nvapi-…", defaultModel: "nvidia/nemotron-3-super-120b-a12b", free: true },
 };
 

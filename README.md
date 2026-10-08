@@ -143,7 +143,7 @@ src/lib/ai/            asistentes (herramientas, bucle con Gemini/NVIDIA, ejecuc
 src/lib/payments/      Bancard y simulador
 ```
 
-Los asistentes usan la clave cargada en **Panel → Datos del negocio → Asistente de IA** (o, si no hay, `AI_PROVIDER` con `GEMINI_API_KEY` / `NVIDIA_API_KEY`). Proveedores válidos: **Google Gemini** (`gemini-3.6-flash`, con respaldo automático a `gemini-3.5-flash` ante alta demanda) y **NVIDIA** (`nvidia/nemotron-3-super-120b-a12b`). Las herramientas, permisos y confirmaciones son las mismas con ambos. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites de consultas: para producción conviene activar la facturación.
+Los asistentes usan la clave cargada en **Panel → Datos del negocio → Asistente de IA** (o, si no hay, `AI_PROVIDER` con `GEMINI_API_KEY` / `NVIDIA_API_KEY`). Proveedores válidos: **Google Gemini** (`gemini-3.5-flash`, con respaldo automático a `gemini-3.5-flash-lite` si el modelo está saturado o tarda más de 15 segundos) y **NVIDIA** (`nvidia/nemotron-3-super-120b-a12b`). Las herramientas, permisos y confirmaciones son las mismas con ambos. En la capa gratuita de Gemini, Google puede usar los mensajes para mejorar sus productos y hay límites de consultas: para producción conviene activar la facturación.
 
 ---
 

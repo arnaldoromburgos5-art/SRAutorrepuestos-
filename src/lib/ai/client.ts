@@ -1,5 +1,5 @@
 import "server-only";
-import { ApiError, GoogleGenAI, type Content, type FunctionCall, type Part } from "@google/genai";
+import { ApiError, GoogleGenAI, type Content, type FunctionCall, type GenerateContentParameters, type Part } from "@google/genai";
 import OpenAI from "openai";
 import type { ZodType } from "zod";
 
@@ -10,9 +10,38 @@ import type { ZodType } from "zod";
 import type { AiConfig, AiProvider } from "./config";
 export type { AiConfig, AiProvider } from "./config";
 
-// Modelos gratuitos de respaldo de Gemini cuando el principal está saturado (503) o sin cuota (429).
-const geminiFallbacks = (model: string) =>
-  [...new Set([model, ...(process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean)])];
+// Modelos gratuitos de respaldo de Gemini cuando el principal está saturado (503), sin cuota (429)
+// o no responde: con mucha demanda Google a veces deja la solicitud colgada en lugar de devolver 503.
+const GEMINI_RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+const GEMINI_COOLDOWN_MS = 5 * 60_000;
+const geminiCooldown = new Map<string, number>(); // modelo → hasta cuándo se saltea
+
+function geminiModels(model: string) {
+  const all = [...new Set([model, ...(process.env.GEMINI_FALLBACK_MODELS || "gemini-3.5-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean)])];
+  const ready = all.filter((m) => (geminiCooldown.get(m) ?? 0) < Date.now());
+  return ready.length ? ready : all;
+}
+
+/** generateContent con tiempo máximo por intento y paso al modelo de respaldo si el actual falla o no responde. */
+async function geminiGenerate(ai: AiConfig, params: Omit<GenerateContentParameters, "model">) {
+  let lastError: unknown;
+  for (const [i, model] of geminiModels(ai.model).entries()) {
+    try {
+      const response = await gemini(ai).models.generateContent({
+        ...params,
+        model,
+        config: { ...params.config, abortSignal: AbortSignal.timeout(i === 0 ? 15_000 : 25_000) },
+      });
+      return { model, response };
+    } catch (e) {
+      lastError = e;
+      // Errores de clave o de pedido no se arreglan cambiando de modelo; cortes de red y demoras sí.
+      if (e instanceof ApiError && !GEMINI_RETRYABLE.has(e.status)) throw e;
+      geminiCooldown.set(model, Date.now() + GEMINI_COOLDOWN_MS);
+    }
+  }
+  throw lastError;
+}
 
 // Un cliente por clave (la clave puede cambiar desde el panel).
 const clients = new Map<string, GoogleGenAI | OpenAI>();
@@ -26,7 +55,7 @@ function clientFor<T>(ai: AiConfig, make: () => T): T {
 }
 const gemini = (ai: AiConfig) => clientFor(ai, () => new GoogleGenAI({ apiKey: ai.apiKey }));
 const nvidia = (ai: AiConfig) =>
-  clientFor(ai, () => new OpenAI({ apiKey: ai.apiKey, baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1", maxRetries: 2, timeout: 90_000 }));
+  clientFor(ai, () => new OpenAI({ apiKey: ai.apiKey, baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1", maxRetries: 1, timeout: 25_000 }));
 
 // ---------------------------------------------------------------------------
 // Herramientas (independientes del proveedor)
@@ -155,28 +184,10 @@ async function runGemini<Ctx>(opts: RunOptions<Ctx>) {
   const functionDeclarations = opts.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.input_schema }));
   let text = "";
 
-  const generate = async (contents: Content[]) => {
-    let lastError: unknown;
-    for (const model of geminiFallbacks(opts.ai.model)) {
-      try {
-        return await gemini(opts.ai).models.generateContent({
-          model,
-          contents,
-          config: {
-            systemInstruction: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}`,
-            tools: [{ functionDeclarations }],
-          },
-        });
-      } catch (e) {
-        lastError = e;
-        if (!(e instanceof ApiError) || ![429, 500, 503].includes(e.status)) throw e;
-      }
-    }
-    throw lastError;
-  };
+  const config = { systemInstruction: `${opts.system}\n\n# Contexto actual (del sistema)\n${opts.context}`, tools: [{ functionDeclarations }] };
 
   for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
-    const response = await generate([...history, ...appended]);
+    const { response } = await geminiGenerate(opts.ai, { contents: [...history, ...appended], config });
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts?.length) {
       text = "Disculpá, no pude responder eso. Si tenés una consulta sobre repuestos o pedidos, contame.";
@@ -222,17 +233,8 @@ export async function testAiConnection(ai: AiConfig): Promise<{ ok: true; reply:
   try {
     const prompt = "Respondé sólo con la palabra: funciona";
     if (ai.provider === "gemini") {
-      let lastError: unknown;
-      for (const model of geminiFallbacks(ai.model)) {
-        try {
-          const r = await gemini(ai).models.generateContent({ model, contents: prompt });
-          return { ok: true, reply: (r.text ?? "").trim().slice(0, 60), model };
-        } catch (e) {
-          lastError = e;
-          if (!(e instanceof ApiError) || ![429, 500, 503].includes(e.status)) throw e;
-        }
-      }
-      throw lastError;
+      const { model, response } = await geminiGenerate(ai, { contents: prompt });
+      return { ok: true, reply: (response.text ?? "").trim().slice(0, 60), model };
     }
     const r = await nvidia(ai).chat.completions.create({ model: ai.model, max_tokens: 20, messages: [{ role: "user", content: prompt }] });
     return { ok: true, reply: (r.choices[0]?.message?.content ?? "").trim().slice(0, 60), model: ai.model };
@@ -257,5 +259,10 @@ export function describeAiError(e: unknown) {
     console.error("Gemini", e.status, e.message);
     return "El asistente no está disponible en este momento.";
   }
+  const name = e instanceof Error ? e.name : "";
+  if (name === "TimeoutError" || name === "AbortError" || (e instanceof TypeError && e.message === "fetch failed")) {
+    return "Google está tardando demasiado en responder. Probá de nuevo en unos segundos.";
+  }
+  console.error("IA", e);
   return "Ocurrió un error inesperado con el asistente.";
 }
