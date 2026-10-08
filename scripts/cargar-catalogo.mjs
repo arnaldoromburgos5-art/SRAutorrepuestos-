@@ -1,4 +1,4 @@
-// Carga inicial del catálogo: 15 vehículos (30 versiones), 3 proveedores y 60 productos con fotos reales.
+// Carga inicial del catálogo: 21 modelos (40 versiones), 3 proveedores y 60 productos con fotos reales.
 // Uso: npm run db:catalogo  (lee .env.local; necesita NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SECRET_KEY).
 // Las fotos (supabase/catalogo-fotos.json) se descargan de Unsplash / Wikimedia Commons y se suben al bucket product-images.
 // Precios, stock y compatibilidades son estimados: las compatibilidades quedan "pendiente de verificar".
@@ -50,7 +50,31 @@ const VERSIONS = [
   ["volkswagen", "gol", "VW-GOL-16-13", 2013, 2023, "1.6 MSI", "nafta", "Manual"],
   ["mitsubishi", "l200", "MIT-L200-25D-08", 2008, 2015, "2.5 DI-D (4D56)", "diesel", "Manual / Automática"],
   ["mitsubishi", "l200", "MIT-L200-24D-16", 2016, null, "2.4 DI-D (4N15)", "diesel", "Manual / Automática"],
+  ["toyota", "fortuner", "TOY-FORT-27-16", 2016, null, "2.7 (2TR-FE)", "nafta", "Automática"],
+  ["toyota", "fortuner", "TOY-FORT-28D-16", 2016, null, "2.8 D-4D (1GD-FTV)", "diesel", "Automática"],
+  ["hyundai", "creta", "HYU-CRET-16-17", 2017, null, "1.6 Gamma", "nafta", "Manual / Automática"],
+  ["hyundai", "creta", "HYU-CRET-20-17", 2017, null, "2.0 Nu", "nafta", "Automática"],
+  ["nissan", "march", "NIS-MARC-16-14", 2014, 2021, "1.6 (HR16DE)", "nafta", "Manual / CVT"],
+  ["nissan", "versa", "NIS-VERS-16-12", 2012, 2019, "1.6 (HR16DE)", "nafta", "Manual / CVT"],
+  ["nissan", "versa", "NIS-VERS-16-20", 2020, null, "1.6 (HR16DE)", "nafta", "Manual / CVT"],
+  ["chevrolet", "s10", "CHE-S10-28D-12", 2012, null, "2.8 Duramax", "diesel", "Manual / Automática"],
+  ["volkswagen", "amarok", "VW-AMAR-20D-10", 2010, null, "2.0 TDI", "diesel", "Manual / Automática"],
+  ["volkswagen", "amarok", "VW-AMAR-30D-17", 2017, null, "3.0 V6 TDI", "diesel", "Automática"],
 ];
+
+// Compatibilidades de los modelos que venían en seed.sql (Fortuner, Creta, March, Versa, S10, Amarok).
+const FORT = ["TOY-FORT-27-16", "TOY-FORT-28D-16"];
+const CRETA = ["HYU-CRET-16-17", "HYU-CRET-20-17"];
+const NISSAN16 = ["NIS-MARC-16-14", "NIS-VERS-16-12", "NIS-VERS-16-20"];
+const DIESEL_PICKUPS = ["CHE-S10-28D-12", "VW-AMAR-20D-10", "VW-AMAR-30D-17"];
+const EXTRA_FITS = {
+  "SR-FRE-0001": FORT, "SR-FRE-0008": FORT, "SR-FIL-0006": FORT, "SR-FIL-0013": FORT, "SR-SUS-0006": FORT, "SR-ELE-0006": FORT,
+  "SR-FIL-0001": ["TOY-FORT-28D-16"], "SR-FIL-0010": ["TOY-FORT-28D-16"], "SR-MOT-0003": ["TOY-FORT-28D-16"], "SR-MOT-0004": ["TOY-FORT-28D-16"],
+  "SR-ELE-0003": ["TOY-FORT-28D-16", ...DIESEL_PICKUPS],
+  "SR-ELE-0002": ["TOY-FORT-27-16", ...CRETA],
+  "SR-FIL-0003": CRETA, "SR-ENC-0002": CRETA, "SR-FIL-0014": CRETA, "SR-ELE-0005": CRETA,
+  "SR-ELE-0001": NISSAN16, "SR-ELE-0004": ["NIS-MARC-16-14", "NIS-VERS-16-12"],
+};
 
 // Grupos de compatibilidad
 const V = {
@@ -253,8 +277,9 @@ for (const [sku, name, brand, cat, price, cost, stock, specs, fits, extra = {}] 
   const sup = supplierIds[supplierFor(parentSlug(cat))];
   must(await db.from("supplier_products").insert({ supplier_id: sup, product_id: product.id, cost, lead_time_days: null, is_preferred: true }), `proveedor ${sku}`);
 
-  if (fits.length) {
-    const rows = [...new Set(fits)].map((code) => {
+  const allFits = [...fits, ...(EXTRA_FITS[sku] ?? [])];
+  if (allFits.length) {
+    const rows = [...new Set(allFits)].map((code) => {
       if (!versions[code]) throw new Error(`Versión desconocida ${code} en ${sku}`);
       return { product_id: product.id, version_id: versions[code], status: "unverified", source: "Carga inicial — verificar con el código del repuesto" };
     });

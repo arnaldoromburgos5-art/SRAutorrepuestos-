@@ -125,7 +125,7 @@ npm run lint         # ESLint
 npm run typecheck    # TypeScript
 npm run test:db      # prueba migraciones, pedidos, pagos y permisos en Postgres embebido (PGlite)
 npm run db:bundle    # regenera supabase/setup-completo.sql después de cambiar migraciones o seed
-npm run db:catalogo  # carga 15 vehículos, 3 proveedores y 60 productos con fotos reales (solo en una base sin productos)
+npm run db:catalogo  # carga 21 modelos (40 versiones), 3 proveedores y 60 productos con fotos reales (solo en una base sin productos)
 ```
 
 Estructura principal:
